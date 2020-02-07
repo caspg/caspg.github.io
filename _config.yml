@@ -6,8 +6,6 @@ paginate: 1
 baseurl: ""
 permalink: pretty
 
-source: html
-
 # Gems
 plugins:
   - jekyll-gist
