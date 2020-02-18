@@ -51,6 +51,11 @@ Vivamus sagittis lacus vel augue rutrum faucibus dolor auctor. Duis mollis, est 
 
 Inline code is available with the `<code>` element. Snippets of multiple lines of code are supported through Rouge. Longer lines will automatically scroll horizontally when needed. You may also use code fencing (triple backticks) for rendering code.
 
+```ruby
+class Elo
+end
+```
+
 {% highlight js %}
 // Example can be run directly in your JavaScript console
 

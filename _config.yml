@@ -1,6 +1,7 @@
 # Setup
 title: Kacper Golinski
 tagline: The Website
+tagline_blog: The Blog
 url: https://kacpergolinski.com
 paginate: 1
 baseurl: ""
