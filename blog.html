@@ -1,0 +1,20 @@
+---
+layout: default
+title: The Blog
+tagline: The Blog
+---
+
+<ul class="posts-list">
+  {% for post in site.posts %}
+    <li>
+      <a href="{{ site.baseurl }}{{ post.url }}">
+        {{ post.title }}
+        <small>
+          <time datetime="{{ post.date | date_to_xmlschema }}">
+            {{ post.date | date_to_string }}
+          </time>
+        </small>
+      </a>
+    </li>
+  {% endfor %}
+</ul>

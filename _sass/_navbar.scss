@@ -1,0 +1,10 @@
+.navbar {
+  padding: 20px 40px;
+  display: flex;
+  justify-content: flex-end;
+
+  a {
+    color: $body-color;
+    padding: 5px;
+  }
+}

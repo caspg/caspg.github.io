@@ -3,10 +3,10 @@ layout: home
 title: Home
 ---
 
-<div class="home-page">
+<div class="home__content">
   <header>
     <img class="profile-pic" src="{{ site.baseurl }}/assets/profile-pic.jpg" alt="profile pic">
-    <h1>Hey, I’m Kacper&nbsp;Goliński. A&nbsp;Remote Software Engineer.</h1>
+    <h1>Hey, I’m Kacper&nbsp;Goliński. A&nbsp;Remote Software&nbsp;Engineer.</h1>
 
     <div class="social-links">
       <a href="https://twitter.com/thecaspg" rel="nofollow">Twitter</a>
@@ -14,9 +14,6 @@ title: Home
       <a href="https://www.linkedin.com/in/kacper-golinski-78aa3866" rel="nofollow">Linkedin</a>
     </div>
 
-    <small>
-      &copy; <time datetime="{{ site.time | date_to_xmlschema }}">{{ site.time | date: '%Y' }}</time>
-    </small>
   </header>
 
   <main>
@@ -30,6 +27,12 @@ title: Home
       If you would like to get in touch, please <a href="mailto:kacper.golinski@gmail.com">drop me a message</a>.
     </p>
   </main>
+
+  <footer class="footer">
+    <small>
+      &copy; <time datetime="{{ site.time | date_to_xmlschema }}">{{ site.time | date: '%Y' }}</time>
+    </small>
+  </footer>
 </div>
 
 <!--

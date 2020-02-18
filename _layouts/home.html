@@ -4,9 +4,15 @@
   {% include head.html %}
 
   <body>
-    <main>
-      {{ content }}
-    </main>
+    <div class="container content">
+      <nav class="navbar">
+        <a href="/blog">Blog</a>
+      </nav>
+
+      <main>
+        {{ content }}
+      </main>
+    </div>
 
     {% if site.ga_analytics %}
      <script>
