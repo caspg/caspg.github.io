@@ -5,7 +5,11 @@ tagline_blog: The Blog
 url: https://kacpergolinski.com
 paginate: 1
 baseurl: ""
-permalink: /blog/:slug
+
+collections:
+  posts:
+    output: true
+    permalink: /blog/:slug
 
 # Gems
 plugins:
