@@ -23,6 +23,10 @@
   margin-top: 0;
 }
 
+.post-title {
+  font-family: "pt serif", $root-font-family;
+}
+
 // Meta data line below post title
 .post-date {
   display: block;
@@ -41,6 +45,8 @@
   }
 
   li {
+    margin-bottom: 20px;
+
     small {
       font-size: 75%;
       color: #999;
@@ -48,7 +54,7 @@
 
     a:hover {
       color: #268bd2;
-      text-decoration: none;
+      text-decoration: underline;
 
       small {
         color: inherit;
