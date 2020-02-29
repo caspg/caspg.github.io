@@ -1,18 +1,18 @@
 ---
 layout: post
-title: Optimizing full text search with Postgres materialized view - Rails edition
+title: Optimizing full-text search with Postgres materialized view - Rails edition
 ---
 
-My recent side project is an aggregator for remote dev jobs [https://remotestack.club](https://remotestack.club). To keep things simple, I decided to use Postgres full-text search. It offers powerful search capabilities, more than enough for a side project and early startups.
+My recent side project is an aggregator for remote dev jobs [https://remotestack.club](https://remotestack.club). To keep things simple, I decided to use Postgres full-text search. It offers powerful search capabilities. More than enough for a side project and early startups.
 
-I wanted to offer a search across job's details (title and description), skills' names, and the company's name. The project is created with **Ruby on Rails** and I used **pg_search** gem to handle PostgreSQL's full-text search.
+I built the project with **Ruby on Rails** and I used **pg_search** gem to handle PostgreSQL's full-text search. I wanted to offer a search across the job's details, skills' names, and the company's name.
 
-It is easy to search columns on associated models, unfortunately, there is no simple solution to speed up those searches. This article shows how to optimize search with postgres materialized view.
+It is easy to search columns on associated models. Unfortunately, there is no simple solution to speed up those searches. This article shows how to optimize search with Postgres materialized view.
 
 ### Quick intro to full-text search
 
 Full-text search is a technique for searching natural-language **documents** that satisfy a query.
-In our case, query is a text provided be a user.
+In our case, a query is a text provided by a user.
 
 > A **document** is the unit of searching in a full text search system; for example, a magazine article or email message
 
@@ -22,7 +22,7 @@ In our case, query is a text provided be a user.
   </a>
 </p>
 
-In PostgreSQL a document usually is a text field or a combination of fields, possible stored accross multiple tables. During search, each document is converted into **tsvector**.
+In PostgreSQL, a document usually is a text field or a combination of fields. Possibly stored across multiple tables. During the search, each document is converted into **tsvector**.
 
 > A **tsvector** value is a sorted list of distinct lexemes, which are words that have been normalized to merge different variants of the same word
 
@@ -32,7 +32,7 @@ In PostgreSQL a document usually is a text field or a combination of fields, pos
   </a>
 </p>
 
-Below you can see a **tsvector** in action.
+Below we can see a **tsvector** in action.
 
 ```
 postgres=# SELECT to_tsvector('Ruby on Rails, is a server-side web application framework');
@@ -89,7 +89,7 @@ Let’s create some seed data. 10_000 job posts should be enough.
 
 ## Full text with `pg_search` gem
 
-[Pg_search gem](https://github.com/Casecommons/pg_search) builds ActiveRecord named scopes that take advantage of PostgreSQL's full-text search. We can configure a search scope using `pg_search_scope`. The first parameter is a scope that we will be using for full text search.
+[Pg_search gem](https://github.com/Casecommons/pg_search) builds ActiveRecord named scopes that take advantage of PostgreSQL's full-text search. We can configure a search scope using `pg_search_scope`. The first parameter is a scope that we will use for full-text search.
 
 We want to search against columns in `JobPost` but also against columns on associated models, `Skill` and `Company`. `pg_search` supports searching through associations with `:associated_against` options.
 
@@ -113,18 +113,18 @@ class JobPost < ApplicationRecord
 end
 ```
 
-After adding couple lines of code, we can already use full-text search. As we can see below, performance is not that great.
+After adding a couple of lines of code, we can already use a full-text search. As we can see below, performance is not that great.
 
 ```bash
-2.6.5 :017 > JobPost.search("ruby on rails")
-JobPost Load (559.3ms)  SELECT  "job_posts".* FROM "job_posts" ...
+> JobPost.search("ruby on rails")
+JobPost Load (1076.5ms)  SELECT  "job_posts".* FROM "job_posts" ...
 ```
 
 <br/>
 
-## Possible optimizations
+## Potential optimizations
 
-We can use database indexes to speed up data retrieval. We can use one of two types of postgres indexes for full text searches.
+We can use database indexes to speed up data retrieval. Postgres gives us two types of indexes for full-text searches.
 
 * **GIN** (Generalized Inverted Index)
 * **GiST** (Generalized Search Tree)
@@ -137,21 +137,19 @@ CREATE INDEX name ON table USING GIN (column);
 CREATE INDEX name ON table USING GIN (to_tsvector('english', column));
 ```
 
-The column must be of `tsvector` type or must be converted to this type with `to_tsvector` function. The column of tsvector type can be populated using database triggers. With searches across associated tables we have to do some extra work to build such indexes, for example:
+The column must be of `tsvector` type or must be converted to this type with `to_tsvector` function. We can  populate the column of tsvector type using database triggers. With searches across associated tables, we have to do some extra work to build such indexes.
 
-We could use database **denormalization** and triggers to ensure data integrity. This would give us up to date indexes but would introduce extra compleixty and would slow down updates.
-
-Another solution is **materialized view**.
+We could use database **denormalization** and triggers to ensure data integrity. This would give us up to date indexes but would introduce extra complexity and would slow down updates. Another solution is **materialized view**.
 
 <br/>
 
 ## Quick intro to materialized views
 
-A **View** is a virtual table created by a query based on one or more tables. It can be used for wrapping commonly used complex query. **Materialized Views** are special kind of **View** that persist results in table-like form.
+A **View** is a virtual table created by a query based on one or more tables. It can be used for wrapping commonly used complex queries. **Materialized Views** are special kind of **View** that persist results in table-like form.
 
-They give us faster access to data but increase database size and data are not always current. They are perfect in scenarios when data does not have to be always fresh or when we have more static data. For example, job aggregator which imports new posts couple times per day. In this case, data can be refreshed after each import.
+They give us faster access to data but increase database size and data are not always current. They are perfect in scenarios when data does not have to be always fresh or when we have more or less static data. For example, a job aggregator which imports new posts a couple of times per day. In this case, we can refresh data after each import.
 
-Fresh data can be generated with:
+We can generate fresh data with:
 
 ```sql
 REFRESH MATERIALIZED VIEW my_materialized_view;
@@ -159,9 +157,9 @@ REFRESH MATERIALIZED VIEW my_materialized_view;
 
 <br/>
 
-## Materialized views in Rails with scenic gem
+## Materialized views in Rails with Scenic gem
 
-[Scenic gem](https://github.com/scenic-views/scenic) adds methods to create and manage database views in Rails. Regular and materialized views.
+[Scenic](https://github.com/scenic-views/scenic) gem adds methods to create and manage database views (and materialized views) in Rails.
 
 ```bash
 rails generate scenic:view job_post_search --materialized
@@ -169,7 +167,7 @@ rails generate scenic:view job_post_search --materialized
       create  db/migrate/[TIMESTAMP]_update_job_post_searches_to_version_1.rb
 ```
 
-`job_post_searches_v01.sql` defines a query that will be used to build materialized view. We have to build view with two columns, `job_post_id` and `tsv_document`. In our case, `tsv_document` is combination of associated fields in `tsvector` data type.
+`job_post_searches_v01.sql` defines a query we will use to build a materialized view. We have to build a view with two columns, `job_post_id` and `tsv_document`.  `tsv_document` is a combination of associated fields in `tsvector` data type.
 
 ```sql
 -- db/views/job_post_searches_v01.sql
@@ -189,7 +187,7 @@ JOIN skills ON skills.id = job_post_skills.skill_id
 GROUP BY job_posts.id, companies.id;
 ```
 
-Above query returns following results:
+The above query returns the following results:
 
 ```
  job_post_id |                                                                                                            tsv_document
@@ -199,7 +197,7 @@ Above query returns following results:
 ...more rows
 ```
 
-`Scenic` adds `create_view` method which creates a materialized view based on corresponding SQL statement. Finally, we can also create a GIN index on `tsv_document` column.
+`Scenic` adds `create_view` method. It creates a materialized view based on the corresponding SQL statement. Finally, we can also create a GIN index on `tsv_document` column.
 
 ```ruby
 class CreateJobPostSearches < ActiveRecord::Migration
@@ -216,7 +214,7 @@ end
 
 ## Full-text search using materialized view
 
-Thanks to ActiveRecord, model can be backed by a view. We can define search scope on such model in the same way we did with `JobPost` model. This time, we want to search against tsvector type column, instead of using an expression (which is used by default). It won't create tsvector during each search and will use previously created index.
+Thanks to ActiveRecord, a model can be backed by a view. We can define search scope on such model in the same way we did with `JobPost` model. This time, we want to search against tsvector type column, instead of using an expression (which is used by default). It won't create tsvector during each search and will use a previously created index.
 
 ```ruby
 class JobPostSearch < ApplicationRecord
@@ -251,20 +249,20 @@ end
 ## Results
 
 ```bash
-2.6.5 :01 > JobPost.search("ruby on rails")
-JobPost Load (559.3ms)  SELECT  "job_posts".* FROM "job_posts" ...
+> JobPost.search("ruby on rails")
+JobPost Load (1076.5ms)  SELECT  "job_posts".* FROM "job_posts" ...
 
-2.6.5 :02 > JobPost.faster_search("ruby on rails")
-JobPost Load (0.9ms)  SELECT  "job_posts".* FROM "job_posts" ...
+> JobPost.faster_search("ruby on rails")
+JobPost Load (1.2ms)  SELECT  "job_posts".* FROM "job_posts" ...
 ```
 
 <br/>
 
 ## Refreshing materialied view
 
-We will have to refresh materialized view periodically. Scenic gives us handy method to accomplish that.
+There is one more thing that we will have to take care of. We will have to refresh the materialized view periodically. Scenic gives us a handy method to do that.
 
-When refresh is running in non concurent mode, view is locked for selects. Concurent mode requires at least PostgreSQL 9.4 and view to have at least one unique index that covers all rows.
+When the refresh is running in nonconcurrent mode, the view is locked for selects. We can avoid that with the concurrent mode. The concurrent mode requires at least PostgreSQL 9.4 and view to have at least one unique index that covers all rows.
 
 ```ruby
 class JobPostSearch < ApplicationRecord
@@ -279,7 +277,7 @@ class JobPostSearch < ApplicationRecord
 end
 ```
 
-We can add index to our view as to any other table.
+We can add an index to our view as to any other table.
 
 ```ruby
 class AddUniqueIndexToJobPostSerches < ActiveRecord::Migration
@@ -289,16 +287,16 @@ class AddUniqueIndexToJobPostSerches < ActiveRecord::Migration
 end
 ```
 
-Now we can run below method when we want to generate fresh data.
+Now we can run the below method when we want to generate fresh data.
 
 ```bash
-2.6.5 :001 > JobPostSearch.refresh_materialized_view
-(867.2ms)  REFRESH MATERIALIZED VIEW CONCURRENTLY "job_post_searches";
+> JobPostSearch.refresh_materialized_view
+(1411.2ms)  REFRESH MATERIALIZED VIEW CONCURRENTLY "job_post_searches";
 ```
 
 <br/>
 
 ## Links
 
-* [remotestack.club](https://remotestack.club/)
-* [GitHub repo](https://github.com/caspg/optimizing-postgresql-full-text-search-rails) containing code for this blogpost
+* [RemoteStack.club](https://remotestack.club/)
+* [GitHub repo](https://github.com/caspg/optimizing-postgresql-full-text-search-rails) containing code example used in this blogpost
