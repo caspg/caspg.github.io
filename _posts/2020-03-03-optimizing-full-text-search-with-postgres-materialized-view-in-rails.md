@@ -296,7 +296,12 @@ Now we can run the below method when we want to generate fresh data.
 
 <br/>
 
+## Comments
+
+If you have any comments, you can reach me via email or twitter.
+
 ## Links
 
+* [https://twitter.com/thecaspg/status/1234805333048123392](https://twitter.com/thecaspg/status/1234805333048123392)
 * [RemoteStack.club](https://remotestack.club/)
 * [GitHub repo](https://github.com/caspg/optimizing-postgresql-full-text-search-rails) containing code example used in this blogpost
