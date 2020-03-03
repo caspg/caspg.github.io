@@ -1,6 +1,6 @@
 ---
 layout: post
-title: Optimizing full-text search with Postgres materialized view - Rails edition
+title: Optimizing full-text search with Postgres materialized view in Rails
 ---
 
 My recent side project is an aggregator for remote dev jobs [https://remotestack.club](https://remotestack.club). To keep things simple, I decided to use Postgres full-text search. It offers powerful search capabilities. More than enough for a side project and early startups.
