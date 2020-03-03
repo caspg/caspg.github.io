@@ -298,7 +298,9 @@ Now we can run the below method when we want to generate fresh data.
 
 ## Comments
 
-If you have any comments, you can reach me via email or twitter.
+You can reach my via email or [discuss on Twitter](https://twitter.com/thecaspg/status/1234805333048123392).
+
+<br/>
 
 ## Links
 
