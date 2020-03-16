@@ -5,11 +5,11 @@ title: Playing with GPX tracks in Elixir and Postigs
 
 Lately, I'm playing with an idea of creating a web app for storing and visualising my cycling rides. Think about something like my own private version of Strava. Most of the popular activity trackers, allow to export your activities as a **GPX** files. We can use those files to import an activity to the other service, for example to the one that we will build in a moment.
 
-In this blog post, I would like to present my findings on how to accomplish that using Elixir/Phoenix and PostgreSQL. The plan is to parse GPX file and extract track's data. Save it in PostgreSQL as a **geometry** type, which comes with [PostGIS](https://postgis.net/), spatial database extension. Finally, visualize track using [Leaflet.js](https://leafletjs.com/), interactive web map
+In this blog post, I would like to present my findings on how to store and visualize gpx tracks using Elixir/Phoenix, PostgreSQL and little bit of JavaScript. The plan is to parse GPX file and extract track's data. Save it in PostgreSQL as a **geometry** type, which comes with [PostGIS](https://postgis.net/), spatial database extension. Finally, visualize track using [Leaflet.js](https://leafletjs.com/), interactive web map
 
 <br />
 
-## Quick intro to GPX files
+## GPX intro
 
 **GPX** (GPS Exchange Format) is an XML data format, designed to share GPS data between software applications. It was developed by company named TopoGrafix. First release was in 2002 and latest, GPX 1.1, in 2004. You can find more info about the format at the [gpx website](https://www.topografix.com/gpx.asp).
 
@@ -47,116 +47,27 @@ Below we can examin an example gpx file. It contains tracks data, which were rec
 </gpx>
 ```
 
-<br />
+I've created [GpxEx](https://github.com/caspg/gpx_ex) package - elixir gpx parser. It's still work in progress but it supports parsing tracks. After reading gpx file, you can convert it to elixir structs.
 
-## GPX parsing in Elixir
-
-As a first step, we should parse GPX file and convert it into elixir structs. Of course, instead of structs we could just use generic maps, but structs will help with code readability and maintainability.
-
-```elixir
-defmodule Gpx do
-  defstruct tracks: nil
-end
-
-defmodule Track do
-  defstruct segments: nil, name: nil
-end
-
-defmodule TrackSegment do
-  defstruct points: nil
-end
-
-defmodule TrackPoint do
-  defstruct lat: nil, lon: nil, ele: nil, time: nil
-end
-```
-
-GPX is just an XML file and thanks to that we can use [sweet_xml](https://github.com/kbrw/sweet_xml) package which is a xml parser. It gives us a function for extracting desired data using [xpaths](https://en.wikipedia.org/wiki/XPath). For example, `xpath(xml, ~x"//trk"l)` returns list of `trk` elements. Each element can be again passed to `xpath` function to find further details. You can also specify different return values. For now, we will just use:
-
-* `xpath(xml, ~x"//trk"l)` - list of xml elements
-* `xpath(xml, ~x"./name/text()"s` - string
-* `xpath(xml, ~x"./@lat"f)` - float
-
-Let's create our parser using earlier structs.
-
-```elixir
-defmodule Parser do
-  import SweetXml
-
-  def parse(gpx_document) do
-    tracks =
-      gpx_document
-      |> get_track_elements()
-      |> Enum.map(&build_track/1)
-
-    {:ok, %Gpx{tracks: tracks}}
-  end
-
-  defp build_track(track_xml_element) do
-    segments =
-      track_xml_element
-      |> get_segment_elements()
-      |> Enum.map(&build_segment/1)
-
-    track_name = get_track_name(track_xml_element)
-
-    %Track{segments: segments, name: track_name}
-  end
-
-  defp build_segment(segment_xml_element) do
-    points =
-      segment_xml_element
-      |> get_point_elements()
-      |> Enum.map(&build_trackpoint/1)
-
-    %TrackSegment{points: points}
-  end
-
-  defp build_trackpoint(point_element) do
-    %TrackPoint{
-      lat: get_lat(point_element),
-      lon: get_lon(point_element),
-      ele: get_ele(point_element),
-      time: get_time(point_element)
-    }
-  end
-
-  # returns value as a list of xml elements
-  defp get_track_elements(xml), do: xpath(xml, ~x"//trk"l)
-  defp get_segment_elements(xml), do: xpath(xml, ~x"./trkseg"l)
-  defp get_point_elements(xml), do: xpath(xml, ~x"./trkpt"l)
-
-  # returns value as a string
-  defp get_track_name(xml), do: xpath(xml, ~x"./name/text()"s)
-  defp get_time(xml), do: xpath(xml, ~x"./time/text()"s)
-
-  # returns value as a float
-  defp get_lat(xml), do: xpath(xml, ~x"./@lat"f)
-  defp get_lon(xml), do: xpath(xml, ~x"./@lon"f)
-  defp get_ele(xml), do: xpath(xml, ~x"./ele/text()"f)
-end
-```
-
-Now we can read gpx file and pass it to the parser.
 
 ```elixir
 {:ok, gpx_doc} = File.read("./my_track.gpx")
-{:ok, gpx} = Parser.parse(gpx_doc)
+{:ok, gpx} = GpxEx.parse(gpx_doc)
 
-%Gpx{
+%GpxEx.Gpx{
   tracks: [
-    %Track{
+    %GpxEx.Track{
       name: "Track's name",
       segments: [
-        %TrackSegment{
+        %GpxEx.TrackSegment{
           points: [
-            %TrackPoint{
+            %GpxEx.TrackPoint{
               ele: 10.2,
               lat: 54.519848,
               lon: 18.539699,
               time: "2020-02-02T10:37:13Z"
             },
-            %TrackPoint{
+            %GpxEx.TrackPoint{
               ele: 10.2,
               lat: 54.519854,
               lon: 18.53973,
@@ -170,36 +81,51 @@ Now we can read gpx file and pass it to the parser.
 }
 ```
 
-Instead of writing your own parser, you can use package that I've created recently. It's still work in progress and for now it only supports parsing tracks. Repo can be found here [https://github.com/caspg/gpx_ex](https://github.com/caspg/gpx_ex).
+<br />
+
+## PostGIS intro
+
+What is PostGIS and why do we need it? PostgreSQL supports xml data type natively. Why not use that? We could save gpx file straight away and skip the whole parsing part and adding extra extension.
+
+Doing all of that, we would loose many benefits that are provided by [PostGIS](https://postgis.net/features). PostGIS is a spatial database extension that adds support for geographic objects. After converting tracks to geo type and storing them in Postgres, we will be able to run **location queries** and **spatial functions**. For example, we will be able to:
+
+* find all tracks near certain location
+* calculate track's distance
+* convert track to the format used by web maps (GeoJSON, TopoJSON, KML etc)
 
 <br />
 
-## Storing GPX tracks in database
+## Intial project setup
 
-PostgreSQL supports xml data type natively. Why not use that? We could save gpx file straight away and skip the whole parsing part. Then, we could use leaflet plugin for displaying gpx tracks and finish our task without much hassle.
+In this tutorial I'm usingin following versions:
 
-Doing all of that, we would loose many benefits that are provided by [PostGIS](https://postgis.net/features). After converting tracks to geo type and storing them in Postgres, we will be able to:
+* Elixir 1.10
+* Phoenix 1.4.14
+* PostgreSQL 12.2
+* PostGIS 3.0
 
-* run location queries in SQL - find all tracks near certain location
-* use spatial functions - calculate track's distance
-* convert track to the format used by web maps (GeoJSON, TopoJSON, KML etc) - no need for extra javascript plugins
+Let's start with creating new Phoenix project.
+
+```bash
+mix phx.new gpx_phoenix
+cd gpx_phoenix
+mix ecto.create
+```
 
 <br />
 
-## PostGIS extension in Phoenix framework
+## PostGIS in Phoenix framework
 
-We can use [geo](https://github.com/bryanjos/geo) and [geo_postgis](https://github.com/bryanjos/geo_postgis) package to enable PostGIS in Phoenix applications.
+We can use [geo](https://github.com/bryanjos/geo) and [geo_postgis](https://github.com/bryanjos/geo_postgis) packages to enable PostGIS in Phoenix application.
 
 ```elixir
-# mix.exs
-
 defp deps do
   {:geo, "~> 3.3"},
   {:geo_postgis, "~> 3.3"}
 end
 ```
 
-First, we need to pass new postgis extentions to postgrex types. We can create new file to accomplish that.
+First, we need to pass new PostGIS extensions to [postgrex](https://github.com/elixir-ecto/postgrex). We have to create new file, for exmple `lib/gpx_phoenix/postgrex_extensions.ex`. It has to be defined only once during compilation, hence it needs to be done outside of any module or function.
 
 ```elixir
 # lib/gpx_phoenix/postgrex_extensions.ex
@@ -211,12 +137,13 @@ Postgrex.Types.define(
 )
 ```
 
-and pass those types to our Repo config.
+After defining above types, we need to specify them in our `Repo` config.
 
 ```elixir
 # config/config.exs
 
 config :gpx_phoenix, GpxPhoenix.Repo,
+  types: GpxPhoenix.PostgresTypes
 ```
 
 Last step is to actually enable PostGIS in PostgreSQL.
@@ -235,23 +162,173 @@ defmodule GpxPhoenix.Repo.Migrations.EnablePostgisExtension do
 end
 ```
 
-* geo package
-  * database setup
-  * storing parsed gpx in db
+<br />
+
+## Tracks context
+
+In this step, we are creating `Tracks` context. We have to generate migration which will create tracks table with two columns. `geom` column will hold geometry of each track. We can create it using `AddGeometryColumn` function provided by PostGIS.
+
+```sql
+-- AddGeometryColumn(table_name, column_name, srid, type, dimension);
+SELECT AddGeometryColumn('tracks', 'geom', 3857, 'MULTILINESTRINGZ', 3);
+```
+
+The `sird` stands for spatial reference system identifier which defines coordinate system. We are going to use Pseudo-Mercator (EPSG:3857) used for rendering most of the popular web maps. The `type` specifies geometry type, eg, 'POLYGON', 'POINT'. `MULTILINESTRINGZ` is a multi line string type that allows to define elevation of each point. Last argument is the `dimension`, we want to store 3 dimensions, we want to store x and y coordinates along with elevation (z).
+
+```elixir
+# priv/repo/migrations/20200316162637_create_tracks_table.exs
+
+defmodule GpxPhoenix.Repo.Migrations.CreateTracksTable do
+  use Ecto.Migration
+
+  def up do
+    create table(:tracks) do
+      add(:name, :string)
+
+      timestamps()
+    end
+
+    execute("SELECT AddGeometryColumn('tracks', 'geom', 3857, 'MULTILINESTRINGZ', 3);")
+  end
+
+  def down do
+    drop table(:tracks)
+  end
+end
+
+```
+
+In track's schema we can just use `Geo.PostGIS.Geometry` type which was added by `geo_postigs` package, but we have to remember that we specified our geometry type as `MULTILINESTRINGZ`.
+
+```elixir
+# lib/gpx_phoenix/tracks/track.ex
+
+defmodule GpxPhoenix.Tracks.Track do
+  use Ecto.Schema
+  import Ecto.Changeset
+
+  schema "tracks" do
+    field(:name, :string)
+    field(:geom, Geo.PostGIS.Geometry)
+
+    timestamps()
+  end
+
+  @doc false
+  def changeset(track, attrs) do
+    track
+    |> cast(attrs, [:name, :geom])
+    |> validate_required([:name, :geom])
+  end
+end
+```
+
+Tracks context with basic CRUD functions.
+
+```elixir
+# lib/gpx_phoenix/tracks/tracks.ex
+
+defmodule GpxPhoenix.Tracks do
+  @moduledoc """
+  The Tracks context.
+  """
+
+  import Ecto.Query, warn: false
+  alias GpxPhoenix.Repo
+
+  alias GpxPhoenix.Tracks.Track
+
+  def get_track!(id), do: Repo.get!(Track, id)
+
+  def list_tracks, do: Repo.all(Track)
+
+  def create_track(attrs \\ %{}) do
+    %Track{}
+    |> Track.changeset(attrs)
+    |> Repo.insert()
+  end
+
+  def change_track(%Track{} = track), do: Track.changeset(track, %{})
+end
+```
 
 <br />
 
-## Quick intro to PostGIS
+## Tracks importer
 
-* Postgis functions
-  * calculate track distance
-  * search track within radius
-  * convert geometry to geojson/topojson/kml
+Now we can focus on track importer module. It will be responsible for parsing gpx and creating new track's record. We will parse gpx file using [GpxEx](https://github.com/caspg/gpx_ex) package which we have to add to our dependencies.
+
+```elixir
+# mix.exs
+
+defp deps do
+  {:gpx_ex, git: "git@github.com:caspg/gpx_ex.git", tag: "0.1.0"}
+end
+```
+
+Before saving parsed gpx file to the databse, we have to convert it to our geometry type, which is `Geo.MultiLineStringZ`.
+
+```elixir
+# lib/gpx_phoenix/tracks/import_track.ex
+
+defmodule GpxPhoenix.Tracks.ImportTrack do
+  alias GpxPhoenix.Tracks.Track
+
+  @spec call(gpx_doc: String.t()) :: {:error, %Ecto.Changeset{}} | {:ok, %Track{}}
+
+  def call(gpx_doc) do
+    gpx_doc
+    |> GpxEx.parse()
+    |> get_first_track()
+    |> build_track_geometry()
+    |> create_track()
+  end
+
+  defp get_first_track({:ok, %GpxEx.Gpx{tracks: [track | _]}}), do: {:ok, track}
+
+  defp build_track_geometry({:ok, %GpxEx.Track{segments: segments} = track}) do
+    multilinez_coordinates = convert_segments_to_mulitlinez(segments)
+
+    track_geometry = %Geo.MultiLineStringZ{
+      coordinates: multilinez_coordinates,
+      srid: 3857
+    }
+
+    {:ok, track, track_geometry}
+  end
+
+  defp convert_segments_to_mulitlinez([%GpxEx.TrackSegment{} | _] = segments) do
+    Enum.map(segments, fn segment ->
+      Enum.map(segment.points, fn point ->
+        {point.lon, point.lat, point.ele}
+      end)
+    end)
+  end
+
+  defp create_track({:ok, %GpxEx.Track{name: name}, track_geometry}) do
+    GpxPhoenix.Tracks.create_track(%{name: name, geom: track_geometry})
+  end
+end
+```
+
+Let's import some example gpx files. Here are three tracks of my recent activities [https://github.com/caspg/gpx_phoenix/tree/master/gpx_files](https://github.com/caspg/gpx_phoenix/tree/master/gpx_files). We can import them using elixir console.
+
+```bash
+iex -S mix
+
+iex(1)> {:ok, gpx_doc} = File.read("./gpx_files/gdansk-elblag.gpx")
+iex(2)> GpxPhoenix.Tracks.ImportTrack.call(gpx_doc)
+
+# same for othe files
+```
 
 <br />
 
-## Visualising tracks with interactive web map
+## Tracks controller
 
-* leaflet + openstreetmap
-  * displaying track as multilinestring
-  * render leafelt + track
+<br />
+
+## Interactive web map
+
+
+<br />
