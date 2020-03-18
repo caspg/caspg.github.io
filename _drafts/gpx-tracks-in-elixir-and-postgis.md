@@ -120,6 +120,7 @@ We can use [geo](https://github.com/bryanjos/geo) and [geo_postgis](https://gith
 
 ```elixir
 defp deps do
+  # other deps
   {:geo, "~> 3.3"},
   {:geo_postgis, "~> 3.3"}
 end
@@ -166,7 +167,7 @@ end
 
 ## Tracks context
 
-In this step, we are creating `Tracks` context. We have to generate migration which will create tracks table with two columns. `geom` column will hold geometry of each track. We can create it using `AddGeometryColumn` function provided by PostGIS.
+In this section, we are creating `Tracks` context. We have to generate migration which will create tracks table with two columns. `geom` column will hold geometry of each track. We can create it using `AddGeometryColumn` function provided by PostGIS.
 
 ```sql
 -- AddGeometryColumn(table_name, column_name, srid, type, dimension);
@@ -262,11 +263,12 @@ Now we can focus on track importer module. It will be responsible for parsing gp
 # mix.exs
 
 defp deps do
+  # other deps
   {:gpx_ex, git: "git@github.com:caspg/gpx_ex.git", tag: "0.1.0"}
 end
 ```
 
-Before saving parsed gpx file to the databse, we have to convert it to our geometry type, which is `Geo.MultiLineStringZ`.
+Before saving parsed gpx file to the databse, we have to convert it to our geometry type, which is `Geo.MultiLineStringZ`. When creating Geo type, we have to use the same `srid` value as we used during creating `geom` column.
 
 ```elixir
 # lib/gpx_phoenix/tracks/import_track.ex
@@ -297,7 +299,7 @@ defmodule GpxPhoenix.Tracks.ImportTrack do
     {:ok, track, track_geometry}
   end
 
-  defp convert_segments_to_mulitlinez([%GpxEx.TrackSegment{} | _] = segments) do
+  defp convert_segments_to_mulitlinez(segments) do
     Enum.map(segments, fn segment ->
       Enum.map(segment.points, fn point ->
         {point.lon, point.lat, point.ele}
@@ -324,11 +326,160 @@ iex(2)> GpxPhoenix.Tracks.ImportTrack.call(gpx_doc)
 
 <br />
 
+## Converting track to GeoJSON
+
+[GeoJSON](https://en.wikipedia.org/wiki/GeoJSON) format is designed to represent geographical objects and is based on the JSON. It is commonly used in web mapping applications. We can easily convert our geometry to GeoJSON using PostGIS function.
+
+```elixir
+# lib/gpx_phoenix/tracks/tracks.ex
+
+defmodule GpxPhoenix.Tracks do
+  import Ecto.Query, warn: false
+  alias GpxPhoenix.Repo
+  alias GpxPhoenix.Tracks.Track
+
+  # ...other functions
+
+  def get_geom_as_geojson!(%{id: id}) do
+    query =
+      from(t in Track,
+        where: t.id == ^id,
+        select: fragment("ST_AsGeoJSON(?)::json", t.geom)
+      )
+
+    Repo.one!(query)
+  end
+end
+```
+
+<br />
+
 ## Tracks controller
+
+We need to create `tracks_controller`, `tracks_view` and corresponding templates. `tracks_controller` will have two standard CRUD actions and one action for fetching track's GeoJSON asynchronously.
+
+```elixir
+defmodule GpxPhoenixWeb.Router do
+  # omitted code
+
+ scope "/", GpxPhoenixWeb do
+    pipe_through :browser
+
+    get "tracks", TracksController, :index
+    get "tracks/:id", TracksController, :show
+    get "tracks/:id/geojson", TracksController, :geojson
+  end
+end
+```
+
+```elixir
+# lib/gpx_phoenix_web/controllers/tracks_controller.ex
+
+defmodule GpxPhoenixWeb.TracksController do
+  use GpxPhoenixWeb, :controller
+
+  def index(conn, _params) do
+    tracks = GpxPhoenix.Tracks.list_tracks()
+    render(conn, "index.html", tracks: tracks)
+  end
+
+  def show(conn, %{"id" => id} = _params) do
+    track = GpxPhoenix.Tracks.get_track!(id)
+    render(conn, "show.html", track: track)
+  end
+
+  def geojson(conn, %{"id" => id} = _params) do
+    geojson = GpxPhoenix.Tracks.get_geom_as_geojson!(%{id: id})
+
+    json(conn, geojson)
+  end
+end
+```
+
+
+```elixir
+# lib/gpx_phoenix_web/views/tracks_view.ex
+
+defmodule GpxPhoenixWeb.TracksView do
+  use GpxPhoenixWeb, :view
+end
+```
+
+```html
+# lib/gpx_phoenix_web/templates/tracks/index.html.eex
+
+<ul>
+  <%= for track <- @tracks do %>
+    <li>
+      <%= link(track.name, to: Routes.tracks_path(@conn, :show, track.id)) %>
+    </li>
+  <% end %>
+</ul>
+```
+
+```html
+# lib/gpx_phoenix_web/templates/tracks/show.html.eex
+
+<h2><%= @track.name %></h2>
+```
 
 <br />
 
 ## Interactive web map
 
+We will use [Leaflet.js](https://leafletjs.com/) to render interactive web map. Before writing any JavaScript code we have to include Leaflet CSS and Leaflet JavaScript files. To make things simpler we can include those files in `show` template.
+
+We also need a html element which will serve as a container for our map and will hold `track-id` as data attribute. We will need `track-id` to fetch correct geojson.
+
+```html
+# lib/gpx_phoenix_web/templates/tracks/show.html.eex
+
+<h2><%= @track.name %></h2>
+
+<div id="track-map" style="height: 500px; margin-top: 50px;" data-track-id="<%= @track.id %>"></div>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.6.0/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.6.0/dist/leaflet.js"></script>
+```
+
+TODO
+Create Leaflet map, fetch geojson and add it to the map, use leaflet functionality to fit track to the bound
+TODO
+
+```js
+// assets/js/app.js
+
+function renderMap() {
+  const trackMap = document.getElementById('track-map')
+
+  if (!trackMap) {
+    return
+  }
+
+  // create leaflet map object
+  const map = L.map('track-map');
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+  }).addTo(map);
+
+  // fetch geojson and add it to the map
+  const trackId = trackMap.dataset.trackId
+
+  fetch(`/tracks/${trackId}/geojson`)
+    .then((res) => res.json())
+    .then((geojson) => {
+      const geojsonLayer = L.geoJSON(geojson).addTo(map);
+
+      // handy function that makes sure our track will fit the map
+      map.fitBounds(geojsonLayer.getBounds());
+    });
+}
+
+renderMap()
+```
 
 <br />
+
+![Track 1](/assets/images/posts/gpx-tracks-in-elixir-and-postigs/1.png)
+![Track 2](/assets/images/posts/gpx-tracks-in-elixir-and-postigs/2.png)
