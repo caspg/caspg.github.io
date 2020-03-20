@@ -1,24 +1,26 @@
 ---
 layout: post
-title: Playing with GPX tracks in Elixir and Postigs
+title: Playing with GPX tracks in Elixir and PostGIS
 ---
 
-Lately, I'm playing with an idea of creating a web app for storing and visualising my cycling rides. Think about something like my own private version of Strava. Most of the popular activity trackers, allow to export your activities as a **GPX** files. We can use those files to import an activity to the other service, for example to the one that we will build in a moment.
+Lately, I've been thinking about the idea of creating a web app for storing and visualizing my cycle rides. Most of the popular activity trackers, allow exporting your activities as **GPX** files. We can use those files to import activity to the other service, for example to the one that we will build in a moment.
 
-In this blog post, I would like to present my findings on how to store and visualize gpx tracks using Elixir/Phoenix, PostgreSQL and little bit of JavaScript. The plan is to parse GPX file and extract track's data. Save it in PostgreSQL as a **geometry** type, which comes with [PostGIS](https://postgis.net/), spatial database extension. Finally, visualize track using [Leaflet.js](https://leafletjs.com/), interactive web map
+In this blog post, I would like to present my findings on how to store and visualize GPX tracks using Elixir/Phoenix, PostgreSQL and a little bit of JavaScript. The plan is to parse the GPX file and extract track data. Save it in PostgreSQL as a **geometry type**, which comes with [PostGIS](https://postgis.net). Finally, visualize track using an interactive web map.
+
+*[GitHub repo](https://github.com/caspg/gpx_phoenix) containing code used in this blogpost*
 
 <br />
 
 ## GPX intro
 
-**GPX** (GPS Exchange Format) is an XML data format, designed to share GPS data between software applications. It was developed by company named TopoGrafix. First release was in 2002 and latest, GPX 1.1, in 2004. You can find more info about the format at the [gpx website](https://www.topografix.com/gpx.asp).
+**GPX** (GPS Exchange Format) is an XML data format, designed to share GPS data between software applications. You can find more info about the format on [the official website](https://www.topografix.com/gpx.asp).
 
-GPX can be used to describe following data:
-* **waypoints** - individual points without relationship to each other
-* **routes** - an ordered list of points, representing series of turns leading to a destination
-* **tracks** - an ordered list of points, describing a path, for example a raw output of GPS recording of single trip
+GPX can be used to describe the following data:
+* **waypoints** - individual points without relation to each other
+* **routes** - an ordered list of points, representing a series of turns leading to a destination
+* **tracks** - an ordered list of points, describing a path, for example, a raw output of GPS recording of single trip
 
-Below we can examin an example gpx file. It contains tracks data, which were recorded during an activity.
+Below we can examine an example GPX file. It contains tracks data, which were recorded during an activity.
 
 ```xml
 <!-- my_activity.xml -->
@@ -47,7 +49,7 @@ Below we can examin an example gpx file. It contains tracks data, which were rec
 </gpx>
 ```
 
-I've created [GpxEx](https://github.com/caspg/gpx_ex) package - elixir gpx parser. It's still work in progress but it supports parsing tracks. After reading gpx file, you can convert it to elixir structs.
+To parse GPX files in Elixir, I’ve created [GpxEx](https://github.com/caspg/gpx_ex) package. It’s still work in progress but it supports parsing tracks. After reading a file, you can convert it to Elixir structs.
 
 
 ```elixir
@@ -85,26 +87,26 @@ I've created [GpxEx](https://github.com/caspg/gpx_ex) package - elixir gpx parse
 
 ## PostGIS intro
 
-What is PostGIS and why do we need it? PostgreSQL supports xml data type natively. Why not use that? We could save gpx file straight away and skip the whole parsing part and adding extra extension.
+What is PostGIS and why do we need it? PostgreSQL supports the XML data type natively. Why not use that? We could save the GPX file straight away and skip the whole parsing part and adding the extra extension.
 
-Doing all of that, we would loose many benefits that are provided by [PostGIS](https://postgis.net/features). PostGIS is a spatial database extension that adds support for geographic objects. After converting tracks to geo type and storing them in Postgres, we will be able to run **location queries** and **spatial functions**. For example, we will be able to:
+Doing all of that, we would lose many benefits that are provided by [PostGIS](https://postgis.net/features). PostGIS is a spatial database extension that adds support for geographic objects. After converting tracks to geo type and storing them in Postgres, we will be able to run **location queries** and **spatial functions**. For example, we will be able to:
 
-* find all tracks near certain location
+* find all tracks near a certain location
 * calculate track's distance
-* convert track to the format used by web maps (GeoJSON, TopoJSON, KML etc)
+* convert a track to the format used by web maps (GeoJSON, TopoJSON, KML, etc)
 
 <br />
 
 ## Intial project setup
 
-In this tutorial I'm usingin following versions:
+In this tutorial I'm using the following versions:
 
 * Elixir 1.10
 * Phoenix 1.4.14
 * PostgreSQL 12.2
 * PostGIS 3.0
 
-Let's start with creating new Phoenix project.
+Let's start by creating a fresh Phoenix project.
 
 ```bash
 mix phx.new gpx_phoenix
@@ -116,7 +118,7 @@ mix ecto.create
 
 ## PostGIS in Phoenix framework
 
-We can use [geo](https://github.com/bryanjos/geo) and [geo_postgis](https://github.com/bryanjos/geo_postgis) packages to enable PostGIS in Phoenix application.
+We need to add PostGIS support in Phoenix application. To do that, we can use [geo](https://github.com/bryanjos/geo) and [geo_postgis](https://github.com/bryanjos/geo_postgis) packages.
 
 ```elixir
 defp deps do
@@ -126,7 +128,7 @@ defp deps do
 end
 ```
 
-First, we need to pass new PostGIS extensions to [postgrex](https://github.com/elixir-ecto/postgrex). We have to create new file, for exmple `lib/gpx_phoenix/postgrex_extensions.ex`. It has to be defined only once during compilation, hence it needs to be done outside of any module or function.
+First, we need to pass new PostGIS extensions to [postgrex](https://github.com/elixir-ecto/postgrex). We have to create new file, for example `lib/gpx_phoenix/postgrex_extensions.ex`. It has to be defined only once during compilation, hence it needs to be done outside of any module or function.
 
 ```elixir
 # lib/gpx_phoenix/postgrex_extensions.ex
@@ -138,7 +140,7 @@ Postgrex.Types.define(
 )
 ```
 
-After defining above types, we need to specify them in our `Repo` config.
+After defining the above types, we need to specify them in our `Repo` config.
 
 ```elixir
 # config/config.exs
@@ -147,7 +149,7 @@ config :gpx_phoenix, GpxPhoenix.Repo,
   types: GpxPhoenix.PostgresTypes
 ```
 
-Last step is to actually enable PostGIS in PostgreSQL.
+The last step is to enable PostGIS in PostgreSQL.
 
 ```elixir
 defmodule GpxPhoenix.Repo.Migrations.EnablePostgisExtension do
@@ -167,14 +169,20 @@ end
 
 ## Tracks context
 
-In this section, we are creating `Tracks` context. We have to generate migration which will create tracks table with two columns. `geom` column will hold geometry of each track. We can create it using `AddGeometryColumn` function provided by PostGIS.
+In this section, we are creating `Tracks` context. We have to generate migration which will create tracks table with two columns. `geom` column will hold the geometry of each track. We can create it using the `AddGeometryColumn` function provided by PostGIS.
 
 ```sql
 -- AddGeometryColumn(table_name, column_name, srid, type, dimension);
 SELECT AddGeometryColumn('tracks', 'geom', 3857, 'MULTILINESTRINGZ', 3);
 ```
 
-The `sird` stands for spatial reference system identifier which defines coordinate system. We are going to use Pseudo-Mercator (EPSG:3857) used for rendering most of the popular web maps. The `type` specifies geometry type, eg, 'POLYGON', 'POINT'. `MULTILINESTRINGZ` is a multi line string type that allows to define elevation of each point. Last argument is the `dimension`, we want to store 3 dimensions, we want to store x and y coordinates along with elevation (z).
+* The `sird` stands for **spatial reference system identifier** which defines the coordinate system. We are going to use Pseudo-Mercator (EPSG:3857) used for rendering most of the popular web maps.
+* The `type` specifies geometry type, eg 'MULTILINESTRINGZ', 'POLYGON', 'POINT'.
+* The last argument is the `dimension`. We want to store 3 dimensions, x and y coordinates along with elevation (z).
+
+We are defining `geom` as `MULTILINESTRINGZ` because it plays nicely with the way how GPX format. GPX track can contain multiple segments, and each segment contains multiple points. Each point has (lat, lon) coordinates and can also hold elevation.
+
+A **linestring** is a path between locations, an ordered series of two or more points. A "Z" dimension adds height information to each point. A **MultiLineStringZ** is a collection of **linestringZ**
 
 ```elixir
 # priv/repo/migrations/20200316162637_create_tracks_table.exs
@@ -199,7 +207,7 @@ end
 
 ```
 
-In track's schema we can just use `Geo.PostGIS.Geometry` type which was added by `geo_postigs` package, but we have to remember that we specified our geometry type as `MULTILINESTRINGZ`.
+In track’s schema, we have to use `Geo.PostGIS.Geometry` type which was added by `geo_postigs` package. We have to remember that we specified our geometry type as `MULTILINESTRINGZ` and the database will enforce that.
 
 ```elixir
 # lib/gpx_phoenix/tracks/track.ex
@@ -256,8 +264,7 @@ end
 <br />
 
 ## Tracks importer
-
-Now we can focus on track importer module. It will be responsible for parsing gpx and creating new track's record. We will parse gpx file using [GpxEx](https://github.com/caspg/gpx_ex) package which we have to add to our dependencies.
+Now we can focus on track importer module. It will be responsible for parsing GPX and creating a new track record. We will parse GPX file using [GpxEx](https://github.com/caspg/gpx_ex) package which we have to add to our dependencies.
 
 ```elixir
 # mix.exs
@@ -268,7 +275,7 @@ defp deps do
 end
 ```
 
-Before saving parsed gpx file to the databse, we have to convert it to our geometry type, which is `Geo.MultiLineStringZ`. When creating Geo type, we have to use the same `srid` value as we used during creating `geom` column.
+Before saving parsed GPX file to the database, we have to convert it to our geometry type, which is `Geo.MultiLineStringZ`. When creating Geo type, we have to use the same `srid` value as we used during creating `geom` column.
 
 ```elixir
 # lib/gpx_phoenix/tracks/import_track.ex
@@ -313,7 +320,7 @@ defmodule GpxPhoenix.Tracks.ImportTrack do
 end
 ```
 
-Let's import some example gpx files. Here are three tracks of my recent activities [https://github.com/caspg/gpx_phoenix/tree/master/gpx_files](https://github.com/caspg/gpx_phoenix/tree/master/gpx_files). We can import them using elixir console.
+Let's import some example Gpx files. Here are three tracks I recorded during my rides [https://github.com/caspg/gpx_phoenix/tree/master/gpx_files](https://github.com/caspg/gpx_phoenix/tree/master/gpx_files). We can import them using Elixir console.
 
 ```bash
 iex -S mix
@@ -328,7 +335,7 @@ iex(2)> GpxPhoenix.Tracks.ImportTrack.call(gpx_doc)
 
 ## Converting track to GeoJSON
 
-[GeoJSON](https://en.wikipedia.org/wiki/GeoJSON) format is designed to represent geographical objects and is based on the JSON. It is commonly used in web mapping applications. We can easily convert our geometry to GeoJSON using PostGIS function.
+[GeoJSON](https://en.wikipedia.org/wiki/GeoJSON) format is designed to represent geographical objects and is based on the JSON. It is commonly used in web mapping applications. We can convert our geometry to GeoJSON using PostGIS function.
 
 ```elixir
 # lib/gpx_phoenix/tracks/tracks.ex
@@ -356,7 +363,7 @@ end
 
 ## Tracks controller
 
-We need to create `tracks_controller`, `tracks_view` and corresponding templates. `tracks_controller` will have two standard CRUD actions and one action for fetching track's GeoJSON asynchronously.
+Let's create `tracks_controller`, `tracks_view` and corresponding templates. `tracks_controller` will have two standard CRUD actions and one action, `geojson`, for fetching track's GeoJSON asynchronously.
 
 ```elixir
 defmodule GpxPhoenixWeb.Router do
@@ -427,24 +434,22 @@ end
 
 ## Interactive web map
 
-We will use [Leaflet.js](https://leafletjs.com/) to render interactive web map. Before writing any JavaScript code we have to include Leaflet CSS and Leaflet JavaScript files. To make things simpler we can include those files in `show` template.
+We can use [Leaflet.js](https://leafletjs.com/) to render an interactive web map. Before writing any JavaScript code we have to include Leaflet CSS and Leaflet JavaScript files. To make things simpler we can include those files in the `show` template.
 
-We also need a html element which will serve as a container for our map and will hold `track-id` as data attribute. We will need `track-id` to fetch correct geojson.
+We also need an HTML element that will serve as a container for our map and will hold `track-id` as a data attribute. We are going to use a `track-id` to fetch correct GeoJSON.
 
 ```html
 # lib/gpx_phoenix_web/templates/tracks/show.html.eex
 
 <h2><%= @track.name %></h2>
 
-<div id="track-map" style="height: 500px; margin-top: 50px;" data-track-id="<%= @track.id %>"></div>
+<div id="track-map" data-track-id="<%= @track.id %>" style="height: 500px; margin-top: 50px;"></div>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.6.0/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet@1.6.0/dist/leaflet.js"></script>
 ```
 
-TODO
-Create Leaflet map, fetch geojson and add it to the map, use leaflet functionality to fit track to the bound
-TODO
+The only thing that’s left is to create an actual map and render our track on it. Leaflet allows for adding GeoJSON layers. There is also a handy function that will make sure our track fits the map. In this example, I’m using OpenStreetMap as a free tiles provider. In a production app, we should look for some [commercial provider](https://wiki.openstreetmap.org/wiki/Tile_servers).
 
 ```js
 // assets/js/app.js
@@ -457,23 +462,24 @@ function renderMap() {
   }
 
   // create leaflet map object
-  const map = L.map('track-map');
+  const map = L.map(trackMap)
 
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-  }).addTo(map);
+    attribution:
+      '&copy <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+  }).addTo(map)
 
-  // fetch geojson and add it to the map
   const trackId = trackMap.dataset.trackId
 
+  // fetch geojson and add it to the map as new layer
   fetch(`/tracks/${trackId}/geojson`)
-    .then((res) => res.json())
-    .then((geojson) => {
-      const geojsonLayer = L.geoJSON(geojson).addTo(map);
+    .then(res => res.json())
+    .then(geojson => {
+      const geojsonLayer = L.geoJSON(geojson).addTo(map)
 
       // handy function that makes sure our track will fit the map
-      map.fitBounds(geojsonLayer.getBounds());
-    });
+      map.fitBounds(geojsonLayer.getBounds())
+    })
 }
 
 renderMap()
@@ -481,5 +487,21 @@ renderMap()
 
 <br />
 
+Finally, we can see our tracks on the interactive map. In case you are wondering, yes, there is [Hel](https://en.wikipedia.org/wiki/Hel_Peninsula) in Poland.
+<br />
+
 ![Track 1](/assets/images/posts/gpx-tracks-in-elixir-and-postigs/1.png)
 ![Track 2](/assets/images/posts/gpx-tracks-in-elixir-and-postigs/2.png)
+
+<br/>
+
+## Comments
+
+You can reach my via email or [discuss on Twitter](https://twitter.com/thecaspg).
+
+<br/>
+
+## Links
+
+* [https://twitter.com/thecaspg](https://twitter.com/thecaspg)
+* [GitHub repo](https://github.com/caspg/gpx_phoenix) containing code used in this blogpost
