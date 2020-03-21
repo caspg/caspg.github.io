@@ -29,7 +29,7 @@
 
 // Meta data line below post title
 .post-date {
-  display: block;
+  display: inline-block;
   margin-top: -.5rem;
   margin-bottom: 1rem;
   color: #9a9a9a;
@@ -61,4 +61,13 @@
       }
     }
   }
+}
+
+.post-tag {
+  font-size: .75rem;
+  padding: .25rem;
+  // border: 1px solid #CBD5E0;
+  // background-color: #EDF2F7;
+  color: #4A5568;
+  // border-radius: .25rem;
 }

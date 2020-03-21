@@ -1,6 +1,7 @@
 ---
 layout: post
 title: Playing with GPX tracks in Elixir and PostGIS
+tags: [elixir, phoenix, postgis, postgresql]
 ---
 
 Lately, I've been thinking about the idea of creating a web app for storing and visualizing my cycle rides. Most of the popular activity trackers, allow exporting your activities as **GPX** files. We can use those files to import activity to the other service, for example to the one that we will build in a moment.

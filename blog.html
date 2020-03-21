@@ -13,11 +13,21 @@ tagline: The Blog
         </a>
       </div>
 
-      <small>
-        <time datetime="{{ post.date | date_to_xmlschema }}">
-          {{ post.date | date_to_string }}
-        </time>
-      </small>
+      <div style="margin-top: 10px;">
+        <small>
+          <time datetime="{{ post.date | date_to_xmlschema }}">
+            {{ post.date | date_to_string }}
+          </time>
+        </small>
+
+        {% for tag in post.tags %}
+          <span class="post-tag">
+            <strong>
+              {{ tag }}
+            </strong>
+          </span>
+        {% endfor %}
+      </div>
     </li>
   {% endfor %}
 </ul>
