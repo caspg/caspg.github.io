@@ -498,11 +498,11 @@ Finally, we can see our tracks on the interactive map. In case you are wondering
 
 ## Comments
 
-You can reach my via email or [discuss on Twitter](https://twitter.com/thecaspg).
+You can reach my via email or [discuss on Twitter](https://twitter.com/thecaspg/status/1241682086404202496).
 
 <br/>
 
 ## Links
 
-* [https://twitter.com/thecaspg](https://twitter.com/thecaspg)
+* [https://twitter.com/thecaspg/status/1241682086404202496](https://twitter.com/thecaspg/status/1241682086404202496)
 * [GitHub repo](https://github.com/caspg/gpx_phoenix) containing code used in this blogpost
