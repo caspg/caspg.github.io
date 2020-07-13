@@ -8,4 +8,4 @@ gem 'jekyll-seo-tag'
 gem 'rubocop'
 
 # for now github-pages does support jekyll 4.0 >=
-gem 'github-pages', group: :jekyll_plugins
+# gem 'github-pages', group: :jekyll_plugins
