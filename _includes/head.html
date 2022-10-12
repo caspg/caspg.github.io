@@ -1,20 +1,17 @@
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-  <meta property="og:image" content="{{ site.url }}/assets/circle.png">
+  <meta property="og:image" content="{{ site.url }}/assets/circle.png" />
   <meta name="twitter:image" content="{{ site.url }}/assets/circle.png" />
 
   <title>
-    {% if page.title == "Home" %}
-      {{site.tagline}} &middot; {{ site.title }}
-    {% else %}
-      {{ page.title }} &middot; {{ site.title }}
-    {% endif %}
+    {% if page.title == "Home" %} {{ site.title }} {% else %} {{ page.title }}
+    &middot; {{ site.title }} {% endif %}
   </title>
 
-  <link rel="stylesheet" href="{{ site.baseurl }}/styles.css">
-  <link rel="shortcut icon" href="{{ site.baseurl }}/assets/favicon.ico">
+  <link rel="stylesheet" href="{{ site.baseurl }}/styles.css" />
+  <link rel="shortcut icon" href="{{ site.baseurl }}/assets/favicon.ico" />
 
   {% seo title=false %}
 </head>
