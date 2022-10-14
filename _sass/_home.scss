@@ -24,7 +24,13 @@
     }
   }
 
+  h2 {
+    font-size: 2.5rem;
+    font-weight: bolder;
+    font-family: "pt serif", $root-font-family;
+  }
+
   main {
-    margin-top: 50px;
+    margin-top: 20px;
   }
 }
