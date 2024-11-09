@@ -3,19 +3,12 @@ title: Kacper Golinski
 tagline: The Website
 tagline_blog: The Blog
 url: https://caspg.com
-paginate: 1
 baseurl: ""
 
 collections:
   posts:
     output: true
     permalink: /blog/:slug
-
-# Gems
-plugins:
-  - jekyll-gist
-  - jekyll-paginate
-  - jekyll-seo-tag
 
 # Optimize Jekyll
 exclude:

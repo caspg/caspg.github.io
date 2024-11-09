@@ -5,7 +5,8 @@ title: Home
 
 <div class="home__content">
   <header>
-    <img width="200" height="200" class="profile-pic" src="{{ site.baseurl }}/assets/profile-pic.jpg" alt="profile pic" />
+    <img width="200" height="200" class="profile-pic" src="{{ site.baseurl }}/assets/profile-pic.jpg"
+      alt="profile pic" />
     <h1>
       Hey, I’m Kacper&nbsp;Goliński. The&nbsp;Software Engineer with a passion for cycling.
     </h1>
@@ -26,11 +27,6 @@ title: Home
       which allows me to bring my love for technology and my love for outdoors together.
     </p>
 
-    <p>
-      I believe in using technology to make a positive impact, and I take pride in everything I do. If you have a
-      problem to solve or an idea to bring to life, I'd love to work with you. <strong>Let's make something amazing
-        together.</strong>
-    </p>
 
     <div class="social-links">
       <a href="https://twitter.com/thecaspg" rel="nofollow" style="display: flex; align-items: center">
@@ -83,6 +79,42 @@ title: Home
     <h2>Projects</h2>
 
     <section>
+      <h3>VeloPlanner</h3>
+
+      <p>
+        It's an interactive map where you can find signposted cycling routes (not MTB yet) and various POIs
+        (campgrounds, shelters, viewpoints, and historic points). Everything is powered by OpenStreetMap.
+      </p>
+
+      <p>
+        <strong>Tech:</strong> Elixir/Phoenix, TypeScript, MapLibre, and Postgres/Postgis.
+      </p>
+
+      <div style="margin-bottom: 10px; display: flex; justify-content: end">
+        <a href="https://veloplanner.com" style="display: flex; align-items: center" target="_blank">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
+            stroke="currentColor" style="width: 20px; height: 20px">
+            <path stroke-linecap="round" stroke-linejoin="round"
+              d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244" />
+          </svg>
+
+          <span style="margin-left: 5px"> veloplanner.com </span>
+        </a>
+      </div>
+
+      <div class="shadow-xl" style="
+          overflow: hidden;
+          border-radius: 10px;
+          border-top: 1px solid #f1f1f1;
+        ">
+        <a href="https://veloplanner.com/routes" style="display: flex; align-items: center" target="_blank">
+          <img class="shadow-xl projects__screenshot" src="{{ site.baseurl }}/assets/images/projects/veloplanner.jpg"
+            alt="cycling routes in Europe" />
+        </a>
+      </div>
+    </section>
+
+    <section>
       <h3>TravelerMap</h3>
 
       <p>
@@ -130,14 +162,15 @@ title: Home
     <section>
       <h3>Velomapa</h3>
 
-      It is one of the most popular websites for cyclists in Poland. With a user base of <strong>~80 000</strong> unique
-      visitors and
-      almost <strong>300 000</strong> sessions per month during peak The site features a wealth of helpful information,
-      including GPX track downloads. It has social features which allows users to upload photos, add reviews, and like
-      routes.
+      <p>
+        It is one of the most popular websites for cyclists in Poland. The site features a wealth of helpful
+        information,
+        including GPX track downloads. It has social features which allows users to upload photos, add reviews, and like
+        routes.
+      </p>
 
       <p>
-        <strong>Tech:</strong> Elixir/Phoenix, TypeScript, Leaflet,
+        <strong>Tech:</strong> Elixir/Phoenix, TypeScript, Maplibre,
         Postgres/Postgis, AWS S3 and Lambda for photo processing.
       </p>
 
