@@ -4,6 +4,7 @@ tagline: The Website
 tagline_blog: The Blog
 url: https://caspg.com
 baseurl: ""
+destination: docs/
 
 collections:
   posts:

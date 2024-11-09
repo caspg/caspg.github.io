@@ -1,0 +1,587 @@
+<!doctype html>
+<html lang="en">
+
+  <head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <meta property="og:image" content="https://caspg.com/assets/circle.png" />
+  <meta name="twitter:image" content="https://caspg.com/assets/circle.png" />
+
+  <title>
+     Playing with GPX tracks in Elixir and PostGIS
+    &middot; Kacper Golinski 
+  </title>
+
+  <link rel="stylesheet" href="/styles.css" />
+  <link rel="shortcut icon" href="/assets/favicon.ico" />
+</head>
+
+
+  <body>
+
+    <div class="container content">
+      <header class="masthead">
+        <h3 class="masthead-title">
+          <a href="/" title="Home">Kacper Golinski</a>
+          <a href="/blog" title="Blog">
+            <small>The Blog</small>
+          </a>
+        </h3>
+      </header>
+
+      <main>
+        <article class="post">
+  <h1 class="post-title">Playing with GPX tracks in Elixir and PostGIS</h1>
+  <div>
+    <time datetime="2020-03-20T00:00:00+01:00" class="post-date">20 Mar 2020</time>
+
+    
+      <span class="post-tag">
+        <strong>
+          elixir
+        </strong>
+      </span>
+    
+      <span class="post-tag">
+        <strong>
+          phoenix
+        </strong>
+      </span>
+    
+      <span class="post-tag">
+        <strong>
+          postgis
+        </strong>
+      </span>
+    
+      <span class="post-tag">
+        <strong>
+          postgresql
+        </strong>
+      </span>
+    
+  </div>
+
+  <br>
+
+  <!-- <div class="contract-alert">
+    Are you looking for an Elixir/Ruby/React contractor? <a href="mailto:kacper.golinski@gmail.com">Let's talk!</a>
+  </div>
+
+  <br>
+  <br> -->
+
+  <p>Lately, I’ve been thinking about the idea of creating a web app for storing and visualizing my cycle rides. Most of the popular activity trackers, allow exporting your activities as <strong>GPX</strong> files. We can use those files to import activity to the other service, for example to the one that we will build in a moment.</p>
+
+<p>In this blog post, I would like to present my findings on how to store and visualize GPX tracks using Elixir/Phoenix, PostgreSQL and a little bit of JavaScript. The plan is to parse the GPX file and extract track data. Save it in PostgreSQL as a <strong>geometry type</strong>, which comes with <a href="https://postgis.net">PostGIS</a>. Finally, visualize track using an interactive web map.</p>
+
+<p><em><a href="https://github.com/caspg/gpx_phoenix">GitHub repo</a> containing code used in this blogpost</em></p>
+
+<p><br /></p>
+
+<h2 id="gpx-intro">GPX intro</h2>
+
+<p><strong>GPX</strong> (GPS Exchange Format) is an XML data format, designed to share GPS data between software applications. You can find more info about the format on <a href="https://www.topografix.com/gpx.asp">the official website</a>.</p>
+
+<p>GPX can be used to describe the following data:</p>
+<ul>
+  <li><strong>waypoints</strong> - individual points without relation to each other</li>
+  <li><strong>routes</strong> - an ordered list of points, representing a series of turns leading to a destination</li>
+  <li><strong>tracks</strong> - an ordered list of points, describing a path, for example, a raw output of GPS recording of single trip</li>
+</ul>
+
+<p>Below we can examine an example GPX file. It contains tracks data, which were recorded during an activity.</p>
+
+<div class="language-xml highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c">&lt;!-- my_activity.xml --&gt;</span>
+
+<span class="cp">&lt;?xml version="1.0" encoding="UTF-8"?&gt;</span>
+<span class="nt">&lt;gpx</span> <span class="na">creator=</span><span class="s">"StravaGPX"</span> <span class="na">xmlns:xsi=</span><span class="s">"http://www.w3.org/2001/XMLSchema-instance"</span> <span class="na">xsi:schemaLocation=</span><span class="s">"http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd"</span> <span class="na">version=</span><span class="s">"1.1"</span> <span class="na">xmlns=</span><span class="s">"http://www.topografix.com/GPX/1/1"</span><span class="nt">&gt;</span>
+  <span class="nt">&lt;metadata&gt;</span>
+    <span class="nt">&lt;time&gt;</span>2020-02-02T10:37:13Z<span class="nt">&lt;/time&gt;</span>
+  <span class="nt">&lt;/metadata&gt;</span>
+  <span class="nt">&lt;trk&gt;</span> <span class="c">&lt;!-- representation of a track --&gt;</span>
+    <span class="nt">&lt;name&gt;</span>Gdynia<span class="nt">&lt;/name&gt;</span>
+    <span class="nt">&lt;trkseg&gt;</span> <span class="c">&lt;!-- track segment --&gt;</span>
+      <span class="nt">&lt;trkpt</span> <span class="na">lat=</span><span class="s">"54.5198480"</span> <span class="na">lon=</span><span class="s">"18.5396990"</span><span class="nt">&gt;</span> <span class="c">&lt;!-- track point --&gt;</span>
+        <span class="nt">&lt;ele&gt;</span>10.2<span class="nt">&lt;/ele&gt;</span> <span class="c">&lt;!-- point elevation --&gt;</span>
+        <span class="nt">&lt;time&gt;</span>2020-02-02T10:37:13Z<span class="nt">&lt;/time&gt;</span> <span class="c">&lt;!-- time of the recording  --&gt;</span>
+      <span class="nt">&lt;/trkpt&gt;</span>
+
+      <span class="nt">&lt;trkpt</span> <span class="na">lat=</span><span class="s">"54.5198540"</span> <span class="na">lon=</span><span class="s">"18.5397300"</span><span class="nt">&gt;</span>
+        <span class="nt">&lt;ele&gt;</span>10.2<span class="nt">&lt;/ele&gt;</span>
+        <span class="nt">&lt;time&gt;</span>2020-02-02T10:37:14Z<span class="nt">&lt;/time&gt;</span>
+      <span class="nt">&lt;/trkpt&gt;</span>
+
+      <span class="c">&lt;!-- more track points  --&gt;</span>
+    <span class="nt">&lt;/trkseg&gt;</span>
+  <span class="nt">&lt;/trk&gt;</span>
+<span class="nt">&lt;/gpx&gt;</span>
+</code></pre></div></div>
+
+<p>To parse GPX files in Elixir, I’ve created <a href="https://github.com/caspg/gpx_ex">GpxEx</a> package. It’s still work in progress but it supports parsing tracks. After reading a file, you can convert it to Elixir structs.</p>
+
+<div class="language-elixir highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="p">{</span><span class="ss">:ok</span><span class="p">,</span> <span class="n">gpx_doc</span><span class="p">}</span> <span class="o">=</span> <span class="no">File</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="s2">"./my_track.gpx"</span><span class="p">)</span>
+<span class="p">{</span><span class="ss">:ok</span><span class="p">,</span> <span class="n">gpx</span><span class="p">}</span> <span class="o">=</span> <span class="no">GpxEx</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span><span class="n">gpx_doc</span><span class="p">)</span>
+
+<span class="p">%</span><span class="no">GpxEx</span><span class="o">.</span><span class="no">Gpx</span><span class="p">{</span>
+  <span class="ss">tracks:</span> <span class="p">[</span>
+    <span class="p">%</span><span class="no">GpxEx</span><span class="o">.</span><span class="no">Track</span><span class="p">{</span>
+      <span class="ss">name:</span> <span class="s2">"Track's name"</span><span class="p">,</span>
+      <span class="ss">segments:</span> <span class="p">[</span>
+        <span class="p">%</span><span class="no">GpxEx</span><span class="o">.</span><span class="no">TrackSegment</span><span class="p">{</span>
+          <span class="ss">points:</span> <span class="p">[</span>
+            <span class="p">%</span><span class="no">GpxEx</span><span class="o">.</span><span class="no">TrackPoint</span><span class="p">{</span>
+              <span class="ss">ele:</span> <span class="mf">10.2</span><span class="p">,</span>
+              <span class="ss">lat:</span> <span class="mf">54.519848</span><span class="p">,</span>
+              <span class="ss">lon:</span> <span class="mf">18.539699</span><span class="p">,</span>
+              <span class="ss">time:</span> <span class="s2">"2020-02-02T10:37:13Z"</span>
+            <span class="p">},</span>
+            <span class="p">%</span><span class="no">GpxEx</span><span class="o">.</span><span class="no">TrackPoint</span><span class="p">{</span>
+              <span class="ss">ele:</span> <span class="mf">10.2</span><span class="p">,</span>
+              <span class="ss">lat:</span> <span class="mf">54.519854</span><span class="p">,</span>
+              <span class="ss">lon:</span> <span class="mf">18.53973</span><span class="p">,</span>
+              <span class="ss">time:</span> <span class="s2">"2020-02-02T10:37:14Z"</span>
+            <span class="p">}</span>
+          <span class="p">]</span>
+        <span class="p">}</span>
+      <span class="p">]</span>
+    <span class="p">}</span>
+  <span class="p">]</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p><br /></p>
+
+<h2 id="postgis-intro">PostGIS intro</h2>
+
+<p>What is PostGIS and why do we need it? PostgreSQL supports the XML data type natively. Why not use that? We could save the GPX file straight away and skip the whole parsing part and adding the extra extension.</p>
+
+<p>Doing all of that, we would lose many benefits that are provided by <a href="https://postgis.net/features">PostGIS</a>. PostGIS is a spatial database extension that adds support for geographic objects. After converting tracks to geo type and storing them in Postgres, we will be able to run <strong>location queries</strong> and <strong>spatial functions</strong>. For example, we will be able to:</p>
+
+<ul>
+  <li>find all tracks near a certain location</li>
+  <li>calculate track’s distance</li>
+  <li>convert a track to the format used by web maps (GeoJSON, TopoJSON, KML, etc)</li>
+</ul>
+
+<p><br /></p>
+
+<h2 id="intial-project-setup">Intial project setup</h2>
+
+<p>In this tutorial I’m using the following versions:</p>
+
+<ul>
+  <li>Elixir 1.10</li>
+  <li>Phoenix 1.4.14</li>
+  <li>PostgreSQL 12.2</li>
+  <li>PostGIS 3.0</li>
+</ul>
+
+<p>Let’s start by creating a fresh Phoenix project.</p>
+
+<div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code>mix phx.new gpx_phoenix
+<span class="nb">cd </span>gpx_phoenix
+mix ecto.create
+</code></pre></div></div>
+
+<p><br /></p>
+
+<h2 id="postgis-in-phoenix-framework">PostGIS in Phoenix framework</h2>
+
+<p>We need to add PostGIS support in Phoenix application. To do that, we can use <a href="https://github.com/bryanjos/geo">geo</a> and <a href="https://github.com/bryanjos/geo_postgis">geo_postgis</a> packages.</p>
+
+<div class="language-elixir highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">defp</span> <span class="n">deps</span> <span class="k">do</span>
+  <span class="c1"># other deps</span>
+  <span class="p">{</span><span class="ss">:geo</span><span class="p">,</span> <span class="s2">"~&gt; 3.3"</span><span class="p">},</span>
+  <span class="p">{</span><span class="ss">:geo_postgis</span><span class="p">,</span> <span class="s2">"~&gt; 3.3"</span><span class="p">}</span>
+<span class="k">end</span>
+</code></pre></div></div>
+
+<p>First, we need to pass new PostGIS extensions to <a href="https://github.com/elixir-ecto/postgrex">postgrex</a>. We have to create new file, for example <code class="language-plaintext highlighter-rouge">lib/gpx_phoenix/postgrex_extensions.ex</code>. It has to be defined only once during compilation, hence it needs to be done outside of any module or function.</p>
+
+<div class="language-elixir highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1"># lib/gpx_phoenix/postgrex_extensions.ex</span>
+
+<span class="no">Postgrex</span><span class="o">.</span><span class="no">Types</span><span class="o">.</span><span class="n">define</span><span class="p">(</span>
+  <span class="no">GpxPhoenix</span><span class="o">.</span><span class="no">PostgresTypes</span><span class="p">,</span>
+  <span class="p">[</span><span class="no">Geo</span><span class="o">.</span><span class="no">PostGIS</span><span class="o">.</span><span class="no">Extension</span><span class="p">]</span> <span class="o">++</span> <span class="no">Ecto</span><span class="o">.</span><span class="no">Adapters</span><span class="o">.</span><span class="no">Postgres</span><span class="o">.</span><span class="n">extensions</span><span class="p">(),</span>
+  <span class="ss">json:</span> <span class="no">Jason</span>
+<span class="p">)</span>
+</code></pre></div></div>
+
+<p>After defining the above types, we need to specify them in our <code class="language-plaintext highlighter-rouge">Repo</code> config.</p>
+
+<div class="language-elixir highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1"># config/config.exs</span>
+
+<span class="n">config</span> <span class="ss">:gpx_phoenix</span><span class="p">,</span> <span class="no">GpxPhoenix</span><span class="o">.</span><span class="no">Repo</span><span class="p">,</span>
+  <span class="ss">types:</span> <span class="no">GpxPhoenix</span><span class="o">.</span><span class="no">PostgresTypes</span>
+</code></pre></div></div>
+
+<p>The last step is to enable PostGIS in PostgreSQL.</p>
+
+<div class="language-elixir highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">defmodule</span> <span class="no">GpxPhoenix</span><span class="o">.</span><span class="no">Repo</span><span class="o">.</span><span class="no">Migrations</span><span class="o">.</span><span class="no">EnablePostgisExtension</span> <span class="k">do</span>
+  <span class="kn">use</span> <span class="no">Ecto</span><span class="o">.</span><span class="no">Migration</span>
+
+  <span class="k">def</span> <span class="n">up</span> <span class="k">do</span>
+    <span class="n">execute</span> <span class="s2">"CREATE EXTENSION IF NOT EXISTS postgis"</span>
+  <span class="k">end</span>
+
+  <span class="k">def</span> <span class="n">down</span> <span class="k">do</span>
+    <span class="n">execute</span> <span class="s2">"DROP EXTENSION IF EXISTS postgis"</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</code></pre></div></div>
+
+<p><br /></p>
+
+<h2 id="tracks-context">Tracks context</h2>
+
+<p>In this section, we are creating <code class="language-plaintext highlighter-rouge">Tracks</code> context. We have to generate migration which will create tracks table with two columns. <code class="language-plaintext highlighter-rouge">geom</code> column will hold the geometry of each track. We can create it using the <code class="language-plaintext highlighter-rouge">AddGeometryColumn</code> function provided by PostGIS.</p>
+
+<div class="language-sql highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1">-- AddGeometryColumn(table_name, column_name, srid, type, dimension);</span>
+<span class="k">SELECT</span> <span class="n">AddGeometryColumn</span><span class="p">(</span><span class="s1">'tracks'</span><span class="p">,</span> <span class="s1">'geom'</span><span class="p">,</span> <span class="mi">3857</span><span class="p">,</span> <span class="s1">'MULTILINESTRINGZ'</span><span class="p">,</span> <span class="mi">3</span><span class="p">);</span>
+</code></pre></div></div>
+
+<ul>
+  <li>The <code class="language-plaintext highlighter-rouge">sird</code> stands for <strong>spatial reference system identifier</strong> which defines the coordinate system. We are going to use Pseudo-Mercator (EPSG:3857) used for rendering most of the popular web maps.</li>
+  <li>The <code class="language-plaintext highlighter-rouge">type</code> specifies geometry type, eg ‘MULTILINESTRINGZ’, ‘POLYGON’, ‘POINT’.</li>
+  <li>The last argument is the <code class="language-plaintext highlighter-rouge">dimension</code>. We want to store 3 dimensions, x and y coordinates along with elevation (z).</li>
+</ul>
+
+<p>We are defining <code class="language-plaintext highlighter-rouge">geom</code> as <code class="language-plaintext highlighter-rouge">MULTILINESTRINGZ</code> because it plays nicely with the way how GPX format. GPX track can contain multiple segments, and each segment contains multiple points. Each point has (lat, lon) coordinates and can also hold elevation.</p>
+
+<p>A <strong>linestring</strong> is a path between locations, an ordered series of two or more points. A “Z” dimension adds height information to each point. A <strong>MultiLineStringZ</strong> is a collection of <strong>linestringZ</strong></p>
+
+<div class="language-elixir highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1"># priv/repo/migrations/20200316162637_create_tracks_table.exs</span>
+
+<span class="k">defmodule</span> <span class="no">GpxPhoenix</span><span class="o">.</span><span class="no">Repo</span><span class="o">.</span><span class="no">Migrations</span><span class="o">.</span><span class="no">CreateTracksTable</span> <span class="k">do</span>
+  <span class="kn">use</span> <span class="no">Ecto</span><span class="o">.</span><span class="no">Migration</span>
+
+  <span class="k">def</span> <span class="n">up</span> <span class="k">do</span>
+    <span class="n">create</span> <span class="n">table</span><span class="p">(</span><span class="ss">:tracks</span><span class="p">)</span> <span class="k">do</span>
+      <span class="n">add</span><span class="p">(</span><span class="ss">:name</span><span class="p">,</span> <span class="ss">:string</span><span class="p">)</span>
+
+      <span class="n">timestamps</span><span class="p">()</span>
+    <span class="k">end</span>
+
+    <span class="n">execute</span><span class="p">(</span><span class="s2">"SELECT AddGeometryColumn('tracks', 'geom', 3857, 'MULTILINESTRINGZ', 3);"</span><span class="p">)</span>
+  <span class="k">end</span>
+
+  <span class="k">def</span> <span class="n">down</span> <span class="k">do</span>
+    <span class="n">drop</span> <span class="n">table</span><span class="p">(</span><span class="ss">:tracks</span><span class="p">)</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+
+</code></pre></div></div>
+
+<p>In track’s schema, we have to use <code class="language-plaintext highlighter-rouge">Geo.PostGIS.Geometry</code> type which was added by <code class="language-plaintext highlighter-rouge">geo_postigs</code> package. We have to remember that we specified our geometry type as <code class="language-plaintext highlighter-rouge">MULTILINESTRINGZ</code> and the database will enforce that.</p>
+
+<div class="language-elixir highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1"># lib/gpx_phoenix/tracks/track.ex</span>
+
+<span class="k">defmodule</span> <span class="no">GpxPhoenix</span><span class="o">.</span><span class="no">Tracks</span><span class="o">.</span><span class="no">Track</span> <span class="k">do</span>
+  <span class="kn">use</span> <span class="no">Ecto</span><span class="o">.</span><span class="no">Schema</span>
+  <span class="kn">import</span> <span class="no">Ecto</span><span class="o">.</span><span class="no">Changeset</span>
+
+  <span class="n">schema</span> <span class="s2">"tracks"</span> <span class="k">do</span>
+    <span class="n">field</span><span class="p">(</span><span class="ss">:name</span><span class="p">,</span> <span class="ss">:string</span><span class="p">)</span>
+    <span class="n">field</span><span class="p">(</span><span class="ss">:geom</span><span class="p">,</span> <span class="no">Geo</span><span class="o">.</span><span class="no">PostGIS</span><span class="o">.</span><span class="no">Geometry</span><span class="p">)</span>
+
+    <span class="n">timestamps</span><span class="p">()</span>
+  <span class="k">end</span>
+
+  <span class="nv">@doc</span> <span class="no">false</span>
+  <span class="k">def</span> <span class="n">changeset</span><span class="p">(</span><span class="n">track</span><span class="p">,</span> <span class="n">attrs</span><span class="p">)</span> <span class="k">do</span>
+    <span class="n">track</span>
+    <span class="o">|&gt;</span> <span class="n">cast</span><span class="p">(</span><span class="n">attrs</span><span class="p">,</span> <span class="p">[</span><span class="ss">:name</span><span class="p">,</span> <span class="ss">:geom</span><span class="p">])</span>
+    <span class="o">|&gt;</span> <span class="n">validate_required</span><span class="p">([</span><span class="ss">:name</span><span class="p">,</span> <span class="ss">:geom</span><span class="p">])</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</code></pre></div></div>
+
+<p>Tracks context with basic CRUD functions.</p>
+
+<div class="language-elixir highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1"># lib/gpx_phoenix/tracks/tracks.ex</span>
+
+<span class="k">defmodule</span> <span class="no">GpxPhoenix</span><span class="o">.</span><span class="no">Tracks</span> <span class="k">do</span>
+  <span class="nv">@moduledoc</span> <span class="sd">"""
+  The Tracks context.
+  """</span>
+
+  <span class="kn">import</span> <span class="no">Ecto</span><span class="o">.</span><span class="no">Query</span><span class="p">,</span> <span class="ss">warn:</span> <span class="no">false</span>
+  <span class="n">alias</span> <span class="no">GpxPhoenix</span><span class="o">.</span><span class="no">Repo</span>
+
+  <span class="n">alias</span> <span class="no">GpxPhoenix</span><span class="o">.</span><span class="no">Tracks</span><span class="o">.</span><span class="no">Track</span>
+
+  <span class="k">def</span> <span class="n">get_track!</span><span class="p">(</span><span class="n">id</span><span class="p">),</span> <span class="k">do</span><span class="p">:</span> <span class="no">Repo</span><span class="o">.</span><span class="n">get!</span><span class="p">(</span><span class="no">Track</span><span class="p">,</span> <span class="n">id</span><span class="p">)</span>
+
+  <span class="k">def</span> <span class="n">list_tracks</span><span class="p">,</span> <span class="k">do</span><span class="p">:</span> <span class="no">Repo</span><span class="o">.</span><span class="n">all</span><span class="p">(</span><span class="no">Track</span><span class="p">)</span>
+
+  <span class="k">def</span> <span class="n">create_track</span><span class="p">(</span><span class="n">attrs</span> <span class="p">\\</span> <span class="p">%{})</span> <span class="k">do</span>
+    <span class="p">%</span><span class="no">Track</span><span class="p">{}</span>
+    <span class="o">|&gt;</span> <span class="no">Track</span><span class="o">.</span><span class="n">changeset</span><span class="p">(</span><span class="n">attrs</span><span class="p">)</span>
+    <span class="o">|&gt;</span> <span class="no">Repo</span><span class="o">.</span><span class="n">insert</span><span class="p">()</span>
+  <span class="k">end</span>
+
+  <span class="k">def</span> <span class="n">change_track</span><span class="p">(%</span><span class="no">Track</span><span class="p">{}</span> <span class="o">=</span> <span class="n">track</span><span class="p">),</span> <span class="k">do</span><span class="p">:</span> <span class="no">Track</span><span class="o">.</span><span class="n">changeset</span><span class="p">(</span><span class="n">track</span><span class="p">,</span> <span class="p">%{})</span>
+<span class="k">end</span>
+</code></pre></div></div>
+
+<p><br /></p>
+
+<h2 id="tracks-importer">Tracks importer</h2>
+<p>Now we can focus on track importer module. It will be responsible for parsing GPX and creating a new track record. We will parse GPX file using <a href="https://github.com/caspg/gpx_ex">GpxEx</a> package which we have to add to our dependencies.</p>
+
+<div class="language-elixir highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1"># mix.exs</span>
+
+<span class="k">defp</span> <span class="n">deps</span> <span class="k">do</span>
+  <span class="c1"># other deps</span>
+  <span class="p">{</span><span class="ss">:gpx_ex</span><span class="p">,</span> <span class="ss">git:</span> <span class="s2">"git@github.com:caspg/gpx_ex.git"</span><span class="p">,</span> <span class="ss">tag:</span> <span class="s2">"0.1.0"</span><span class="p">}</span>
+<span class="k">end</span>
+</code></pre></div></div>
+
+<p>Before saving parsed GPX file to the database, we have to convert it to our geometry type, which is <code class="language-plaintext highlighter-rouge">Geo.MultiLineStringZ</code>. When creating Geo type, we have to use the same <code class="language-plaintext highlighter-rouge">srid</code> value as we used during creating <code class="language-plaintext highlighter-rouge">geom</code> column.</p>
+
+<div class="language-elixir highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1"># lib/gpx_phoenix/tracks/import_track.ex</span>
+
+<span class="k">defmodule</span> <span class="no">GpxPhoenix</span><span class="o">.</span><span class="no">Tracks</span><span class="o">.</span><span class="no">ImportTrack</span> <span class="k">do</span>
+  <span class="n">alias</span> <span class="no">GpxPhoenix</span><span class="o">.</span><span class="no">Tracks</span><span class="o">.</span><span class="no">Track</span>
+
+  <span class="nv">@spec</span> <span class="n">call</span><span class="p">(</span><span class="ss">gpx_doc:</span> <span class="no">String</span><span class="o">.</span><span class="n">t</span><span class="p">())</span> <span class="p">::</span> <span class="p">{</span><span class="ss">:error</span><span class="p">,</span> <span class="p">%</span><span class="no">Ecto</span><span class="o">.</span><span class="no">Changeset</span><span class="p">{}}</span> <span class="o">|</span> <span class="p">{</span><span class="ss">:ok</span><span class="p">,</span> <span class="p">%</span><span class="no">Track</span><span class="p">{}}</span>
+
+  <span class="k">def</span> <span class="n">call</span><span class="p">(</span><span class="n">gpx_doc</span><span class="p">)</span> <span class="k">do</span>
+    <span class="n">gpx_doc</span>
+    <span class="o">|&gt;</span> <span class="no">GpxEx</span><span class="o">.</span><span class="n">parse</span><span class="p">()</span>
+    <span class="o">|&gt;</span> <span class="n">get_first_track</span><span class="p">()</span>
+    <span class="o">|&gt;</span> <span class="n">build_track_geometry</span><span class="p">()</span>
+    <span class="o">|&gt;</span> <span class="n">create_track</span><span class="p">()</span>
+  <span class="k">end</span>
+
+  <span class="k">defp</span> <span class="n">get_first_track</span><span class="p">({</span><span class="ss">:ok</span><span class="p">,</span> <span class="p">%</span><span class="no">GpxEx</span><span class="o">.</span><span class="no">Gpx</span><span class="p">{</span><span class="ss">tracks:</span> <span class="p">[</span><span class="n">track</span> <span class="o">|</span> <span class="n">_</span><span class="p">]}}),</span> <span class="k">do</span><span class="p">:</span> <span class="p">{</span><span class="ss">:ok</span><span class="p">,</span> <span class="n">track</span><span class="p">}</span>
+
+  <span class="k">defp</span> <span class="n">build_track_geometry</span><span class="p">({</span><span class="ss">:ok</span><span class="p">,</span> <span class="p">%</span><span class="no">GpxEx</span><span class="o">.</span><span class="no">Track</span><span class="p">{</span><span class="ss">segments:</span> <span class="n">segments</span><span class="p">}</span> <span class="o">=</span> <span class="n">track</span><span class="p">})</span> <span class="k">do</span>
+    <span class="n">multilinez_coordinates</span> <span class="o">=</span> <span class="n">convert_segments_to_mulitlinez</span><span class="p">(</span><span class="n">segments</span><span class="p">)</span>
+
+    <span class="n">track_geometry</span> <span class="o">=</span> <span class="p">%</span><span class="no">Geo</span><span class="o">.</span><span class="no">MultiLineStringZ</span><span class="p">{</span>
+      <span class="ss">coordinates:</span> <span class="n">multilinez_coordinates</span><span class="p">,</span>
+      <span class="ss">srid:</span> <span class="mi">3857</span>
+    <span class="p">}</span>
+
+    <span class="p">{</span><span class="ss">:ok</span><span class="p">,</span> <span class="n">track</span><span class="p">,</span> <span class="n">track_geometry</span><span class="p">}</span>
+  <span class="k">end</span>
+
+  <span class="k">defp</span> <span class="n">convert_segments_to_mulitlinez</span><span class="p">(</span><span class="n">segments</span><span class="p">)</span> <span class="k">do</span>
+    <span class="no">Enum</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="n">segments</span><span class="p">,</span> <span class="k">fn</span> <span class="n">segment</span> <span class="o">-&gt;</span>
+      <span class="no">Enum</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="n">segment</span><span class="o">.</span><span class="n">points</span><span class="p">,</span> <span class="k">fn</span> <span class="n">point</span> <span class="o">-&gt;</span>
+        <span class="p">{</span><span class="n">point</span><span class="o">.</span><span class="n">lon</span><span class="p">,</span> <span class="n">point</span><span class="o">.</span><span class="n">lat</span><span class="p">,</span> <span class="n">point</span><span class="o">.</span><span class="n">ele</span><span class="p">}</span>
+      <span class="k">end</span><span class="p">)</span>
+    <span class="k">end</span><span class="p">)</span>
+  <span class="k">end</span>
+
+  <span class="k">defp</span> <span class="n">create_track</span><span class="p">({</span><span class="ss">:ok</span><span class="p">,</span> <span class="p">%</span><span class="no">GpxEx</span><span class="o">.</span><span class="no">Track</span><span class="p">{</span><span class="ss">name:</span> <span class="n">name</span><span class="p">},</span> <span class="n">track_geometry</span><span class="p">})</span> <span class="k">do</span>
+    <span class="no">GpxPhoenix</span><span class="o">.</span><span class="no">Tracks</span><span class="o">.</span><span class="n">create_track</span><span class="p">(%{</span><span class="ss">name:</span> <span class="n">name</span><span class="p">,</span> <span class="ss">geom:</span> <span class="n">track_geometry</span><span class="p">})</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</code></pre></div></div>
+
+<p>Let’s import some example Gpx files. Here are three tracks I recorded during my rides <a href="https://github.com/caspg/gpx_phoenix/tree/master/gpx_files">https://github.com/caspg/gpx_phoenix/tree/master/gpx_files</a>. We can import them using Elixir console.</p>
+
+<div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code>iex <span class="nt">-S</span> mix
+
+iex<span class="o">(</span>1<span class="o">)&gt;</span> <span class="o">{</span>:ok, gpx_doc<span class="o">}</span> <span class="o">=</span> File.read<span class="o">(</span><span class="s2">"./gpx_files/gdansk-elblag.gpx"</span><span class="o">)</span>
+iex<span class="o">(</span>2<span class="o">)&gt;</span> GpxPhoenix.Tracks.ImportTrack.call<span class="o">(</span>gpx_doc<span class="o">)</span>
+
+<span class="c"># same for othe files</span>
+</code></pre></div></div>
+
+<p><br /></p>
+
+<h2 id="converting-track-to-geojson">Converting track to GeoJSON</h2>
+
+<p><a href="https://en.wikipedia.org/wiki/GeoJSON">GeoJSON</a> format is designed to represent geographical objects and is based on the JSON. It is commonly used in web mapping applications. We can convert our geometry to GeoJSON using PostGIS function.</p>
+
+<div class="language-elixir highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1"># lib/gpx_phoenix/tracks/tracks.ex</span>
+
+<span class="k">defmodule</span> <span class="no">GpxPhoenix</span><span class="o">.</span><span class="no">Tracks</span> <span class="k">do</span>
+  <span class="kn">import</span> <span class="no">Ecto</span><span class="o">.</span><span class="no">Query</span><span class="p">,</span> <span class="ss">warn:</span> <span class="no">false</span>
+  <span class="n">alias</span> <span class="no">GpxPhoenix</span><span class="o">.</span><span class="no">Repo</span>
+  <span class="n">alias</span> <span class="no">GpxPhoenix</span><span class="o">.</span><span class="no">Tracks</span><span class="o">.</span><span class="no">Track</span>
+
+  <span class="c1"># ...other functions</span>
+
+  <span class="k">def</span> <span class="n">get_geom_as_geojson!</span><span class="p">(%{</span><span class="ss">id:</span> <span class="n">id</span><span class="p">})</span> <span class="k">do</span>
+    <span class="n">query</span> <span class="o">=</span>
+      <span class="n">from</span><span class="p">(</span><span class="n">t</span> <span class="ow">in</span> <span class="no">Track</span><span class="p">,</span>
+        <span class="ss">where:</span> <span class="n">t</span><span class="o">.</span><span class="n">id</span> <span class="o">==</span> <span class="o">^</span><span class="n">id</span><span class="p">,</span>
+        <span class="ss">select:</span> <span class="n">fragment</span><span class="p">(</span><span class="s2">"ST_AsGeoJSON(?)::json"</span><span class="p">,</span> <span class="n">t</span><span class="o">.</span><span class="n">geom</span><span class="p">)</span>
+      <span class="p">)</span>
+
+    <span class="no">Repo</span><span class="o">.</span><span class="n">one!</span><span class="p">(</span><span class="n">query</span><span class="p">)</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</code></pre></div></div>
+
+<p><br /></p>
+
+<h2 id="tracks-controller">Tracks controller</h2>
+
+<p>Let’s create <code class="language-plaintext highlighter-rouge">tracks_controller</code>, <code class="language-plaintext highlighter-rouge">tracks_view</code> and corresponding templates. <code class="language-plaintext highlighter-rouge">tracks_controller</code> will have two standard CRUD actions and one action, <code class="language-plaintext highlighter-rouge">geojson</code>, for fetching track’s GeoJSON asynchronously.</p>
+
+<div class="language-elixir highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">defmodule</span> <span class="no">GpxPhoenixWeb</span><span class="o">.</span><span class="no">Router</span> <span class="k">do</span>
+  <span class="c1"># omitted code</span>
+
+ <span class="n">scope</span> <span class="s2">"/"</span><span class="p">,</span> <span class="no">GpxPhoenixWeb</span> <span class="k">do</span>
+    <span class="n">pipe_through</span> <span class="ss">:browser</span>
+
+    <span class="n">get</span> <span class="s2">"tracks"</span><span class="p">,</span> <span class="no">TracksController</span><span class="p">,</span> <span class="ss">:index</span>
+    <span class="n">get</span> <span class="s2">"tracks/:id"</span><span class="p">,</span> <span class="no">TracksController</span><span class="p">,</span> <span class="ss">:show</span>
+    <span class="n">get</span> <span class="s2">"tracks/:id/geojson"</span><span class="p">,</span> <span class="no">TracksController</span><span class="p">,</span> <span class="ss">:geojson</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</code></pre></div></div>
+
+<div class="language-elixir highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1"># lib/gpx_phoenix_web/controllers/tracks_controller.ex</span>
+
+<span class="k">defmodule</span> <span class="no">GpxPhoenixWeb</span><span class="o">.</span><span class="no">TracksController</span> <span class="k">do</span>
+  <span class="kn">use</span> <span class="no">GpxPhoenixWeb</span><span class="p">,</span> <span class="ss">:controller</span>
+
+  <span class="k">def</span> <span class="n">index</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">_params</span><span class="p">)</span> <span class="k">do</span>
+    <span class="n">tracks</span> <span class="o">=</span> <span class="no">GpxPhoenix</span><span class="o">.</span><span class="no">Tracks</span><span class="o">.</span><span class="n">list_tracks</span><span class="p">()</span>
+    <span class="n">render</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="s2">"index.html"</span><span class="p">,</span> <span class="ss">tracks:</span> <span class="n">tracks</span><span class="p">)</span>
+  <span class="k">end</span>
+
+  <span class="k">def</span> <span class="n">show</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="p">%{</span><span class="s2">"id"</span> <span class="o">=&gt;</span> <span class="n">id</span><span class="p">}</span> <span class="o">=</span> <span class="n">_params</span><span class="p">)</span> <span class="k">do</span>
+    <span class="n">track</span> <span class="o">=</span> <span class="no">GpxPhoenix</span><span class="o">.</span><span class="no">Tracks</span><span class="o">.</span><span class="n">get_track!</span><span class="p">(</span><span class="n">id</span><span class="p">)</span>
+    <span class="n">render</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="s2">"show.html"</span><span class="p">,</span> <span class="ss">track:</span> <span class="n">track</span><span class="p">)</span>
+  <span class="k">end</span>
+
+  <span class="k">def</span> <span class="n">geojson</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="p">%{</span><span class="s2">"id"</span> <span class="o">=&gt;</span> <span class="n">id</span><span class="p">}</span> <span class="o">=</span> <span class="n">_params</span><span class="p">)</span> <span class="k">do</span>
+    <span class="n">geojson</span> <span class="o">=</span> <span class="no">GpxPhoenix</span><span class="o">.</span><span class="no">Tracks</span><span class="o">.</span><span class="n">get_geom_as_geojson!</span><span class="p">(%{</span><span class="ss">id:</span> <span class="n">id</span><span class="p">})</span>
+
+    <span class="n">json</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">geojson</span><span class="p">)</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</code></pre></div></div>
+
+<div class="language-elixir highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1"># lib/gpx_phoenix_web/views/tracks_view.ex</span>
+
+<span class="k">defmodule</span> <span class="no">GpxPhoenixWeb</span><span class="o">.</span><span class="no">TracksView</span> <span class="k">do</span>
+  <span class="kn">use</span> <span class="no">GpxPhoenixWeb</span><span class="p">,</span> <span class="ss">:view</span>
+<span class="k">end</span>
+</code></pre></div></div>
+
+<div class="language-html highlighter-rouge"><div class="highlight"><pre class="highlight"><code># lib/gpx_phoenix_web/templates/tracks/index.html.eex
+
+<span class="nt">&lt;ul&gt;</span>
+  <span class="nt">&lt;</span><span class="err">%=</span> <span class="na">for</span> <span class="na">track</span> <span class="err">&lt;</span><span class="na">-</span> <span class="err">@</span><span class="na">tracks</span> <span class="na">do</span> <span class="err">%</span><span class="nt">&gt;</span>
+    <span class="nt">&lt;li&gt;</span>
+      <span class="nt">&lt;</span><span class="err">%=</span> <span class="na">link</span><span class="err">(</span><span class="na">track.name</span><span class="err">,</span> <span class="na">to:</span> <span class="na">Routes.tracks_path</span><span class="err">(@</span><span class="na">conn</span><span class="err">,</span> <span class="na">:show</span><span class="err">,</span> <span class="na">track.id</span><span class="err">))</span> <span class="err">%</span><span class="nt">&gt;</span>
+    <span class="nt">&lt;/li&gt;</span>
+  <span class="nt">&lt;</span><span class="err">%</span> <span class="na">end</span> <span class="err">%</span><span class="nt">&gt;</span>
+<span class="nt">&lt;/ul&gt;</span>
+</code></pre></div></div>
+
+<div class="language-html highlighter-rouge"><div class="highlight"><pre class="highlight"><code># lib/gpx_phoenix_web/templates/tracks/show.html.eex
+
+<span class="nt">&lt;h2&gt;&lt;</span><span class="err">%=</span> <span class="err">@</span><span class="na">track.name</span> <span class="err">%</span><span class="nt">&gt;&lt;/h2&gt;</span>
+</code></pre></div></div>
+
+<p><br /></p>
+
+<h2 id="interactive-web-map">Interactive web map</h2>
+
+<p>We can use <a href="https://leafletjs.com/">Leaflet.js</a> to render an interactive web map. Before writing any JavaScript code we have to include Leaflet CSS and Leaflet JavaScript files. To make things simpler we can include those files in the <code class="language-plaintext highlighter-rouge">show</code> template.</p>
+
+<p>We also need an HTML element that will serve as a container for our map and will hold <code class="language-plaintext highlighter-rouge">track-id</code> as a data attribute. We are going to use a <code class="language-plaintext highlighter-rouge">track-id</code> to fetch correct GeoJSON.</p>
+
+<div class="language-html highlighter-rouge"><div class="highlight"><pre class="highlight"><code># lib/gpx_phoenix_web/templates/tracks/show.html.eex
+
+<span class="nt">&lt;h2&gt;&lt;</span><span class="err">%=</span> <span class="err">@</span><span class="na">track.name</span> <span class="err">%</span><span class="nt">&gt;&lt;/h2&gt;</span>
+
+<span class="nt">&lt;div</span> <span class="na">id=</span><span class="s">"track-map"</span> <span class="na">data-track-id=</span><span class="s">"&lt;%= @track.id %&gt;"</span> <span class="na">style=</span><span class="s">"height: 500px; margin-top: 50px;"</span><span class="nt">&gt;&lt;/div&gt;</span>
+
+<span class="nt">&lt;link</span> <span class="na">rel=</span><span class="s">"stylesheet"</span> <span class="na">href=</span><span class="s">"https://unpkg.com/leaflet@1.6.0/dist/leaflet.css"</span> <span class="nt">/&gt;</span>
+<span class="nt">&lt;script </span><span class="na">src=</span><span class="s">"https://unpkg.com/leaflet@1.6.0/dist/leaflet.js"</span><span class="nt">&gt;&lt;/script&gt;</span>
+</code></pre></div></div>
+
+<p>The only thing that’s left is to create an actual map and render our track on it. Leaflet allows for adding GeoJSON layers. There is also a handy function that will make sure our track fits the map. In this example, I’m using OpenStreetMap as a free tiles provider. In a production app, we should look for some <a href="https://wiki.openstreetmap.org/wiki/Tile_servers">commercial provider</a>.</p>
+
+<div class="language-js highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1">// assets/js/app.js</span>
+
+<span class="kd">function</span> <span class="nf">renderMap</span><span class="p">()</span> <span class="p">{</span>
+  <span class="kd">const</span> <span class="nx">trackMap</span> <span class="o">=</span> <span class="nb">document</span><span class="p">.</span><span class="nf">getElementById</span><span class="p">(</span><span class="dl">'</span><span class="s1">track-map</span><span class="dl">'</span><span class="p">)</span>
+
+  <span class="k">if </span><span class="p">(</span><span class="o">!</span><span class="nx">trackMap</span><span class="p">)</span> <span class="p">{</span>
+    <span class="k">return</span>
+  <span class="p">}</span>
+
+  <span class="c1">// create leaflet map object</span>
+  <span class="kd">const</span> <span class="nx">map</span> <span class="o">=</span> <span class="nx">L</span><span class="p">.</span><span class="nf">map</span><span class="p">(</span><span class="nx">trackMap</span><span class="p">)</span>
+
+  <span class="nx">L</span><span class="p">.</span><span class="nf">tileLayer</span><span class="p">(</span><span class="dl">'</span><span class="s1">https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png</span><span class="dl">'</span><span class="p">,</span> <span class="p">{</span>
+    <span class="na">attribution</span><span class="p">:</span>
+      <span class="dl">'</span><span class="s1">&amp;copy &lt;a href="https://www.openstreetmap.org/copyright"&gt;OpenStreetMap&lt;/a&gt; contributors</span><span class="dl">'</span>
+  <span class="p">}).</span><span class="nf">addTo</span><span class="p">(</span><span class="nx">map</span><span class="p">)</span>
+
+  <span class="kd">const</span> <span class="nx">trackId</span> <span class="o">=</span> <span class="nx">trackMap</span><span class="p">.</span><span class="nx">dataset</span><span class="p">.</span><span class="nx">trackId</span>
+
+  <span class="c1">// fetch geojson and add it to the map as new layer</span>
+  <span class="nf">fetch</span><span class="p">(</span><span class="s2">`/tracks/</span><span class="p">${</span><span class="nx">trackId</span><span class="p">}</span><span class="s2">/geojson`</span><span class="p">)</span>
+    <span class="p">.</span><span class="nf">then</span><span class="p">(</span><span class="nx">res</span> <span class="o">=&gt;</span> <span class="nx">res</span><span class="p">.</span><span class="nf">json</span><span class="p">())</span>
+    <span class="p">.</span><span class="nf">then</span><span class="p">(</span><span class="nx">geojson</span> <span class="o">=&gt;</span> <span class="p">{</span>
+      <span class="kd">const</span> <span class="nx">geojsonLayer</span> <span class="o">=</span> <span class="nx">L</span><span class="p">.</span><span class="nf">geoJSON</span><span class="p">(</span><span class="nx">geojson</span><span class="p">).</span><span class="nf">addTo</span><span class="p">(</span><span class="nx">map</span><span class="p">)</span>
+
+      <span class="c1">// handy function that makes sure our track will fit the map</span>
+      <span class="nx">map</span><span class="p">.</span><span class="nf">fitBounds</span><span class="p">(</span><span class="nx">geojsonLayer</span><span class="p">.</span><span class="nf">getBounds</span><span class="p">())</span>
+    <span class="p">})</span>
+<span class="p">}</span>
+
+<span class="nf">renderMap</span><span class="p">()</span>
+</code></pre></div></div>
+
+<p><br /></p>
+
+<p>Finally, we can see our tracks on the interactive map. In case you are wondering, yes, there is <a href="https://en.wikipedia.org/wiki/Hel_Peninsula">Hel</a> in Poland.
+<br /></p>
+
+<p><img src="/assets/images/posts/gpx-tracks-in-elixir-and-postigs/1.png" alt="Track 1" />
+<img src="/assets/images/posts/gpx-tracks-in-elixir-and-postigs/2.png" alt="Track 2" /></p>
+
+<p><br /></p>
+
+<h2 id="comments">Comments</h2>
+
+<p>You can reach my via email or <a href="https://twitter.com/thecaspg/status/1241682445335920645">discuss on Twitter</a>.</p>
+
+<p><br /></p>
+
+<h2 id="links">Links</h2>
+
+<ul>
+  <li><a href="https://twitter.com/thecaspg/status/1241682445335920645">https://twitter.com/thecaspg/status/1241682445335920645</a></li>
+  <li><a href="https://github.com/caspg/gpx_phoenix">GitHub repo</a> containing code used in this blogpost</li>
+</ul>
+
+
+</article>
+
+      </main>
+
+      <footer class="footer">
+        <small>
+          &copy; <time datetime="2024-11-09T17:26:38+01:00">2024</time>
+        </small>
+      </footer>
+    </div>
+
+    
+     <script>
+       (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+       (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+       m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+       })(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+       ga('create', 'UA-161583319-1', 'auto');
+       ga('send', 'pageview');
+     </script>
+    
+  </body>
+</html>
