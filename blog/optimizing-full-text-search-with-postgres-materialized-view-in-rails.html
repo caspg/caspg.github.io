@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="en">
+
+  <head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <meta property="og:image" content="https://caspg.com/assets/circle.png" />
+  <meta name="twitter:image" content="https://caspg.com/assets/circle.png" />
+
+  <title>
+     Optimizing full-text search with Postgres materialized view in Rails
+    &middot; Kacper Golinski 
+  </title>
+
+  <link rel="stylesheet" href="/styles.css" />
+  <link rel="shortcut icon" href="/assets/favicon.ico" />
+</head>
+
+
+  <body>
+
+    <div class="container content">
+      <header class="masthead">
+        <h3 class="masthead-title">
+          <a href="/" title="Home">Kacper Golinski</a>
+          <a href="/blog" title="Blog">
+            <small>The Blog</small>
+          </a>
+        </h3>
+      </header>
+
+      <main>
+        <article class="post">
+  <h1 class="post-title">Optimizing full-text search with Postgres materialized view in Rails</h1>
+  <div>
+    <time datetime="2020-03-03T00:00:00+00:00" class="post-date">03 Mar 2020</time>
+
+    
+      <span class="post-tag">
+        <strong>
+          ruby
+        </strong>
+      </span>
+    
+      <span class="post-tag">
+        <strong>
+          rails
+        </strong>
+      </span>
+    
+      <span class="post-tag">
+        <strong>
+          postgresql
+        </strong>
+      </span>
+    
+  </div>
+
+  <br>
+
+  <!-- <div class="contract-alert">
+    Are you looking for an Elixir/Ruby/React contractor? <a href="mailto:kacper.golinski@gmail.com">Let's talk!</a>
+  </div>
+
+  <br>
+  <br> -->
+
+  <p>My recent side project is an aggregator for remote dev jobs <a href="https://remotestack.club">https://remotestack.club</a>. To keep things simple, I decided to use Postgres full-text search. It offers powerful search capabilities. More than enough for a side project and early startups.</p>
+
+<p>I built the project with <strong>Ruby on Rails</strong> and I used <strong>pg_search</strong> gem to handle PostgreSQL’s full-text search. I wanted to offer a search across the job’s details, skills’ names, and the company’s name.</p>
+
+<p>It is easy to search columns on associated models. Unfortunately, there is no simple solution to speed up those searches. This article shows how to optimize search with Postgres materialized view.</p>
+
+<h3 id="quick-intro-to-full-text-search">Quick intro to full-text search</h3>
+
+<p>Full-text search is a technique for searching natural-language <strong>documents</strong> that satisfy a query.
+In our case, a query is a text provided by a user.</p>
+
+<blockquote>
+  <p>A <strong>document</strong> is the unit of searching in a full text search system; for example, a magazine article or email message</p>
+</blockquote>
+
+<p style="text-align: end;">
+  <a href="https://www.postgresql.org/docs/9.3/textsearch-intro.html">
+    <small>Postgres text search intro</small>
+  </a>
+</p>
+
+<p>In PostgreSQL, a document usually is a text field or a combination of fields. Possibly stored across multiple tables. During the search, each document is converted into <strong>tsvector</strong>.</p>
+
+<blockquote>
+  <p>A <strong>tsvector</strong> value is a sorted list of distinct lexemes, which are words that have been normalized to merge different variants of the same word</p>
+</blockquote>
+
+<p style="text-align: end;">
+  <a href="https://www.postgresql.org/docs/9.4/datatype-textsearch.html">
+    <small>Text search data types</small>
+  </a>
+</p>
+
+<p>Below we can see a <strong>tsvector</strong> in action.</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>postgres=# SELECT to_tsvector('Ruby on Rails, is a server-side web application framework');
+                                       to_tsvector
+-----------------------------------------------------------------------------------------
+ 'applic':10 'framework':11 'rail':3 'rubi':1 'server':7 'server-sid':6 'side':8 'web':9
+(1 row)
+</code></pre></div></div>
+
+<p><br /></p>
+
+<h2 id="schema">Schema</h2>
+
+<div class="language-ruby highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">class</span> <span class="nc">CreateJobPostsSkillsAndCompanies</span> <span class="o">&lt;</span> <span class="no">ActiveRecord</span><span class="o">::</span><span class="no">Migration</span>
+  <span class="k">def</span> <span class="nf">change</span>
+    <span class="n">create_table</span> <span class="ss">:companies</span> <span class="k">do</span> <span class="o">|</span><span class="n">t</span><span class="o">|</span>
+      <span class="n">t</span><span class="p">.</span><span class="nf">string</span> <span class="ss">:name</span>
+    <span class="k">end</span>
+
+    <span class="n">create_table</span> <span class="ss">:job_posts</span> <span class="k">do</span> <span class="o">|</span><span class="n">t</span><span class="o">|</span>
+      <span class="n">t</span><span class="p">.</span><span class="nf">string</span> <span class="ss">:title</span>
+      <span class="n">t</span><span class="p">.</span><span class="nf">text</span> <span class="ss">:description</span>
+      <span class="n">t</span><span class="p">.</span><span class="nf">belongs_to</span> <span class="ss">:company</span>
+
+      <span class="n">t</span><span class="p">.</span><span class="nf">timestamps</span>
+    <span class="k">end</span>
+
+    <span class="n">create_table</span> <span class="ss">:skills</span> <span class="k">do</span> <span class="o">|</span><span class="n">t</span><span class="o">|</span>
+      <span class="n">t</span><span class="p">.</span><span class="nf">string</span> <span class="ss">:name</span>
+
+      <span class="n">t</span><span class="p">.</span><span class="nf">timestamps</span>
+    <span class="k">end</span>
+
+    <span class="n">create_table</span> <span class="ss">:job_post_skills</span> <span class="k">do</span> <span class="o">|</span><span class="n">t</span><span class="o">|</span>
+      <span class="n">t</span><span class="p">.</span><span class="nf">belongs_to</span> <span class="ss">:skill</span>
+      <span class="n">t</span><span class="p">.</span><span class="nf">belongs_to</span> <span class="ss">:job_post</span>
+
+      <span class="n">t</span><span class="p">.</span><span class="nf">timestamps</span>
+    <span class="k">end</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</code></pre></div></div>
+
+<p><br /></p>
+
+<h2 id="seed-data">Seed data</h2>
+
+<p>Let’s create some seed data. 10_000 job posts should be enough.</p>
+
+<p><a href="https://github.com/caspg/optimizing-postgresql-full-text-search-rails/blob/master/db/seeds.rb">https://github.com/caspg/optimizing-postgresql-full-text-search-rails/blob/master/db/seeds.rb</a></p>
+
+<p><br /></p>
+
+<h2 id="full-text-with-pg_search-gem">Full text with <code class="language-plaintext highlighter-rouge">pg_search</code> gem</h2>
+
+<p><a href="https://github.com/Casecommons/pg_search">Pg_search gem</a> builds ActiveRecord named scopes that take advantage of PostgreSQL’s full-text search. We can configure a search scope using <code class="language-plaintext highlighter-rouge">pg_search_scope</code>. The first parameter is a scope that we will use for full-text search.</p>
+
+<p>We want to search against columns in <code class="language-plaintext highlighter-rouge">JobPost</code> but also against columns on associated models, <code class="language-plaintext highlighter-rouge">Skill</code> and <code class="language-plaintext highlighter-rouge">Company</code>. <code class="language-plaintext highlighter-rouge">pg_search</code> supports searching through associations with <code class="language-plaintext highlighter-rouge">:associated_against</code> options.</p>
+
+<div class="language-ruby highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">class</span> <span class="nc">JobPost</span> <span class="o">&lt;</span> <span class="no">ApplicationRecord</span>
+  <span class="n">has_many</span> <span class="ss">:job_post_skills</span><span class="p">,</span> <span class="ss">dependent: :destroy</span>
+  <span class="n">has_many</span> <span class="ss">:skills</span><span class="p">,</span> <span class="ss">through: :job_post_skills</span>
+  <span class="n">belongs_to</span> <span class="ss">:company</span>
+
+  <span class="kp">include</span> <span class="no">PgSearch</span><span class="o">::</span><span class="no">Model</span>
+  <span class="n">pg_search_scope</span><span class="p">(</span>
+    <span class="ss">:search</span><span class="p">,</span>
+    <span class="ss">against: </span><span class="p">[</span><span class="ss">:title</span><span class="p">,</span> <span class="ss">:description</span><span class="p">],</span>
+    <span class="ss">associated_against: </span><span class="p">{</span> <span class="ss">skills: :name</span><span class="p">,</span> <span class="ss">company: :name</span> <span class="p">},</span>
+    <span class="ss">using: </span><span class="p">{</span>
+      <span class="ss">tsearch: </span><span class="p">{</span>
+        <span class="ss">dictionary: </span><span class="s1">'english'</span><span class="p">,</span>
+      <span class="p">},</span>
+    <span class="p">},</span>
+  <span class="p">)</span>
+<span class="k">end</span>
+</code></pre></div></div>
+
+<p>After adding a couple of lines of code, we can already use a full-text search. As we can see below, performance is not that great.</p>
+
+<div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="o">&gt;</span> JobPost.search<span class="o">(</span><span class="s2">"ruby on rails"</span><span class="o">)</span>
+JobPost Load <span class="o">(</span>1076.5ms<span class="o">)</span>  SELECT  <span class="s2">"job_posts"</span>.<span class="k">*</span> FROM <span class="s2">"job_posts"</span> ...
+</code></pre></div></div>
+
+<p><br /></p>
+
+<h2 id="potential-optimizations">Potential optimizations</h2>
+
+<p>We can use database indexes to speed up data retrieval. Postgres gives us two types of indexes for full-text searches.</p>
+
+<ul>
+  <li><strong>GIN</strong> (Generalized Inverted Index)</li>
+  <li><strong>GiST</strong> (Generalized Search Tree)</li>
+</ul>
+
+<p>Acording to the <a href="https://www.postgresql.org/docs/12/textsearch-indexes.html">documentation</a>, GIN indexes are the preferred type.</p>
+
+<div class="language-sql highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">CREATE</span> <span class="k">INDEX</span> <span class="n">name</span> <span class="k">ON</span> <span class="k">table</span> <span class="k">USING</span> <span class="n">GIN</span> <span class="p">(</span><span class="k">column</span><span class="p">);</span>
+<span class="c1">-- or</span>
+<span class="k">CREATE</span> <span class="k">INDEX</span> <span class="n">name</span> <span class="k">ON</span> <span class="k">table</span> <span class="k">USING</span> <span class="n">GIN</span> <span class="p">(</span><span class="n">to_tsvector</span><span class="p">(</span><span class="s1">'english'</span><span class="p">,</span> <span class="k">column</span><span class="p">));</span>
+</code></pre></div></div>
+
+<p>The column must be of <code class="language-plaintext highlighter-rouge">tsvector</code> type or must be converted to this type with <code class="language-plaintext highlighter-rouge">to_tsvector</code> function. We can  populate the column of tsvector type using database triggers. With searches across associated tables, we have to do some extra work to build such indexes.</p>
+
+<p>We could use database <strong>denormalization</strong> and triggers to ensure data integrity. This would give us up to date indexes but would introduce extra complexity and would slow down updates. Another solution is <strong>materialized view</strong>.</p>
+
+<p><br /></p>
+
+<h2 id="quick-intro-to-materialized-views">Quick intro to materialized views</h2>
+
+<p>A <strong>View</strong> is a virtual table created by a query based on one or more tables. It can be used for wrapping commonly used complex queries. <strong>Materialized Views</strong> are special kind of <strong>View</strong> that persist results in table-like form.</p>
+
+<p>They give us faster access to data but increase database size and data are not always current. They are perfect in scenarios when data does not have to be always fresh or when we have more or less static data. For example, a job aggregator which imports new posts a couple of times per day. In this case, we can refresh data after each import.</p>
+
+<p>We can generate fresh data with:</p>
+
+<div class="language-sql highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">REFRESH</span> <span class="n">MATERIALIZED</span> <span class="k">VIEW</span> <span class="n">my_materialized_view</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p><br /></p>
+
+<h2 id="materialized-views-in-rails-with-scenic-gem">Materialized views in Rails with Scenic gem</h2>
+
+<p><a href="https://github.com/scenic-views/scenic">Scenic</a> gem adds methods to create and manage database views (and materialized views) in Rails.</p>
+
+<div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code>rails generate scenic:view job_post_search <span class="nt">--materialized</span>
+      create  db/views/job_post_searches_v01.sql
+      create  db/migrate/[TIMESTAMP]_update_job_post_searches_to_version_1.rb
+</code></pre></div></div>
+
+<p><code class="language-plaintext highlighter-rouge">job_post_searches_v01.sql</code> defines a query we will use to build a materialized view. We have to build a view with two columns, <code class="language-plaintext highlighter-rouge">job_post_id</code> and <code class="language-plaintext highlighter-rouge">tsv_document</code>.  <code class="language-plaintext highlighter-rouge">tsv_document</code> is a combination of associated fields in <code class="language-plaintext highlighter-rouge">tsvector</code> data type.</p>
+
+<div class="language-sql highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1">-- db/views/job_post_searches_v01.sql</span>
+
+<span class="k">SELECT</span>
+  <span class="n">job_posts</span><span class="p">.</span><span class="n">id</span> <span class="k">AS</span> <span class="n">job_post_id</span><span class="p">,</span>
+  <span class="p">(</span>
+    <span class="n">to_tsvector</span><span class="p">(</span><span class="s1">'english'</span><span class="p">,</span> <span class="n">coalesce</span><span class="p">(</span><span class="n">job_posts</span><span class="p">.</span><span class="n">title</span><span class="p">,</span> <span class="s1">''</span><span class="p">))</span>
+    <span class="o">||</span> <span class="n">to_tsvector</span><span class="p">(</span><span class="s1">'english'</span><span class="p">,</span> <span class="n">coalesce</span><span class="p">(</span><span class="n">job_posts</span><span class="p">.</span><span class="n">description</span><span class="p">,</span> <span class="s1">''</span><span class="p">))</span>
+    <span class="o">||</span> <span class="n">to_tsvector</span><span class="p">(</span><span class="s1">'english'</span><span class="p">,</span> <span class="n">coalesce</span><span class="p">(</span><span class="n">companies</span><span class="p">.</span><span class="n">name</span><span class="p">,</span> <span class="s1">''</span><span class="p">))</span>
+    <span class="o">||</span> <span class="n">to_tsvector</span><span class="p">(</span><span class="s1">'english'</span><span class="p">,</span> <span class="n">coalesce</span><span class="p">(</span><span class="n">string_agg</span><span class="p">(</span><span class="n">skills</span><span class="p">.</span><span class="n">name</span><span class="p">,</span> <span class="s1">' ; '</span><span class="p">),</span> <span class="s1">''</span><span class="p">))</span>
+  <span class="p">)</span> <span class="k">AS</span> <span class="n">tsv_document</span>
+<span class="k">FROM</span> <span class="n">job_posts</span>
+<span class="k">JOIN</span> <span class="n">companies</span> <span class="k">ON</span> <span class="n">companies</span><span class="p">.</span><span class="n">id</span> <span class="o">=</span> <span class="n">job_posts</span><span class="p">.</span><span class="n">company_id</span>
+<span class="k">JOIN</span> <span class="n">job_post_skills</span> <span class="k">ON</span> <span class="n">job_post_skills</span><span class="p">.</span><span class="n">job_post_id</span> <span class="o">=</span> <span class="n">job_posts</span><span class="p">.</span><span class="n">id</span>
+<span class="k">JOIN</span> <span class="n">skills</span> <span class="k">ON</span> <span class="n">skills</span><span class="p">.</span><span class="n">id</span> <span class="o">=</span> <span class="n">job_post_skills</span><span class="p">.</span><span class="n">skill_id</span>
+<span class="k">GROUP</span> <span class="k">BY</span> <span class="n">job_posts</span><span class="p">.</span><span class="n">id</span><span class="p">,</span> <span class="n">companies</span><span class="p">.</span><span class="n">id</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>The above query returns the following results:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code> job_post_id |                                                                                                            tsv_document
+-------------+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+           1 | 'applic':17 'block':31 'dach':30 'develop':5 'framework':18 'licens':25 'mit':24 'parker':28 'rail':4,8,10 'rubi':2,6,21,32 'senior':1 'server':14 'server-sid':13 'side':15 'smith':27 'spacex':26 'von':29 'web':16 'written':19
+
+...more rows
+</code></pre></div></div>
+
+<p><code class="language-plaintext highlighter-rouge">Scenic</code> adds <code class="language-plaintext highlighter-rouge">create_view</code> method. It creates a materialized view based on the corresponding SQL statement. Finally, we can also create a GIN index on <code class="language-plaintext highlighter-rouge">tsv_document</code> column.</p>
+
+<div class="language-ruby highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">class</span> <span class="nc">CreateJobPostSearches</span> <span class="o">&lt;</span> <span class="no">ActiveRecord</span><span class="o">::</span><span class="no">Migration</span>
+  <span class="k">def</span> <span class="nf">change</span>
+    <span class="n">create_view</span> <span class="ss">:job_post_searches</span><span class="p">,</span> <span class="ss">materialized: </span><span class="kp">true</span>
+
+    <span class="c1"># below line added by us</span>
+    <span class="n">add_index</span> <span class="ss">:job_post_searches</span><span class="p">,</span> <span class="ss">:tsv_document</span><span class="p">,</span> <span class="ss">using: :gin</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</code></pre></div></div>
+
+<p><br /></p>
+
+<h2 id="full-text-search-using-materialized-view">Full-text search using materialized view</h2>
+
+<p>Thanks to ActiveRecord, a model can be backed by a view. We can define search scope on such model in the same way we did with <code class="language-plaintext highlighter-rouge">JobPost</code> model. This time, we want to search against tsvector type column, instead of using an expression (which is used by default). It won’t create tsvector during each search and will use a previously created index.</p>
+
+<div class="language-ruby highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">class</span> <span class="nc">JobPostSearch</span> <span class="o">&lt;</span> <span class="no">ApplicationRecord</span>
+  <span class="nb">self</span><span class="p">.</span><span class="nf">primary_key</span> <span class="o">=</span> <span class="ss">:job_post_id</span>
+
+  <span class="kp">include</span> <span class="no">PgSearch</span><span class="o">::</span><span class="no">Model</span>
+  <span class="n">pg_search_scope</span><span class="p">(</span>
+    <span class="ss">:search</span><span class="p">,</span>
+    <span class="ss">against: :tsv_document</span><span class="p">,</span>
+    <span class="ss">using: </span><span class="p">{</span>
+      <span class="ss">tsearch: </span><span class="p">{</span>
+        <span class="ss">dictionary: </span><span class="s1">'english'</span><span class="p">,</span>
+        <span class="c1"># specify tsvector column name</span>
+        <span class="ss">tsvector_column: </span><span class="s1">'tsv_document'</span><span class="p">,</span>
+      <span class="p">},</span>
+    <span class="p">},</span>
+  <span class="p">)</span>
+<span class="k">end</span>
+
+<span class="k">class</span> <span class="nc">JobPost</span> <span class="o">&lt;</span> <span class="no">ApplicationRecord</span>
+  <span class="o">...</span> <span class="c1"># omitted lines</span>
+
+  <span class="k">def</span> <span class="nc">self</span><span class="o">.</span><span class="nf">faster_search</span><span class="p">(</span><span class="n">query</span><span class="p">)</span>
+    <span class="c1"># protip: when using `select` instead of `pluck` we have one query less</span>
+    <span class="n">where</span><span class="p">(</span><span class="ss">id: </span><span class="no">JobPostSearch</span><span class="p">.</span><span class="nf">search</span><span class="p">(</span><span class="n">query</span><span class="p">).</span><span class="nf">select</span><span class="p">(</span><span class="ss">:job_post_id</span><span class="p">))</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</code></pre></div></div>
+
+<p><br /></p>
+
+<h2 id="results">Results</h2>
+
+<div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="o">&gt;</span> JobPost.search<span class="o">(</span><span class="s2">"ruby on rails"</span><span class="o">)</span>
+JobPost Load <span class="o">(</span>1076.5ms<span class="o">)</span>  SELECT  <span class="s2">"job_posts"</span>.<span class="k">*</span> FROM <span class="s2">"job_posts"</span> ...
+
+<span class="o">&gt;</span> JobPost.faster_search<span class="o">(</span><span class="s2">"ruby on rails"</span><span class="o">)</span>
+JobPost Load <span class="o">(</span>1.2ms<span class="o">)</span>  SELECT  <span class="s2">"job_posts"</span>.<span class="k">*</span> FROM <span class="s2">"job_posts"</span> ...
+</code></pre></div></div>
+
+<p><br /></p>
+
+<h2 id="refreshing-materialied-view">Refreshing materialied view</h2>
+
+<p>There is one more thing that we will have to take care of. We will have to refresh the materialized view periodically. Scenic gives us a handy method to do that.</p>
+
+<p>When the refresh is running in nonconcurrent mode, the view is locked for selects. We can avoid that with the concurrent mode. The concurrent mode requires at least PostgreSQL 9.4 and view to have at least one unique index that covers all rows.</p>
+
+<div class="language-ruby highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">class</span> <span class="nc">JobPostSearch</span> <span class="o">&lt;</span> <span class="no">ApplicationRecord</span>
+  <span class="o">...</span> <span class="c1"># omitted lines</span>
+
+  <span class="k">def</span> <span class="nc">self</span><span class="o">.</span><span class="nf">refresh_materialized_view</span>
+    <span class="no">Scenic</span><span class="p">.</span><span class="nf">database</span><span class="p">.</span><span class="nf">refresh_materialized_view</span><span class="p">(</span>
+      <span class="ss">:job_post_searches</span><span class="p">,</span>
+      <span class="ss">concurrently: </span><span class="kp">true</span><span class="p">,</span>
+    <span class="p">)</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</code></pre></div></div>
+
+<p>We can add an index to our view as to any other table.</p>
+
+<div class="language-ruby highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">class</span> <span class="nc">AddUniqueIndexToJobPostSerches</span> <span class="o">&lt;</span> <span class="no">ActiveRecord</span><span class="o">::</span><span class="no">Migration</span>
+  <span class="k">def</span> <span class="nf">change</span>
+    <span class="n">add_index</span> <span class="ss">:job_post_searches</span><span class="p">,</span> <span class="ss">:job_post_id</span><span class="p">,</span> <span class="ss">unique: </span><span class="kp">true</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</code></pre></div></div>
+
+<p>Now we can run the below method when we want to generate fresh data.</p>
+
+<div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="o">&gt;</span> JobPostSearch.refresh_materialized_view
+<span class="o">(</span>1411.2ms<span class="o">)</span>  REFRESH MATERIALIZED VIEW CONCURRENTLY <span class="s2">"job_post_searches"</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p><br /></p>
+
+<h2 id="comments">Comments</h2>
+
+<p>You can reach my via email or <a href="https://twitter.com/thecaspg/status/1234805333048123392">discuss on Twitter</a>.</p>
+
+<p><br /></p>
+
+<h2 id="links">Links</h2>
+
+<ul>
+  <li><a href="https://twitter.com/thecaspg/status/1234805333048123392">https://twitter.com/thecaspg/status/1234805333048123392</a></li>
+  <li><a href="https://remotestack.club/">RemoteStack.club</a></li>
+  <li><a href="https://github.com/caspg/optimizing-postgresql-full-text-search-rails">GitHub repo</a> containing code used in this blogpost</li>
+</ul>
+
+
+</article>
+
+      </main>
+
+      <footer class="footer">
+        <small>
+          &copy; <time datetime="2024-11-09T16:34:30+00:00">2024</time>
+        </small>
+      </footer>
+    </div>
+
+    
+     <script>
+       (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+       (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+       m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+       })(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+       ga('create', 'UA-161583319-1', 'auto');
+       ga('send', 'pageview');
+     </script>
+    
+  </body>
+</html>
