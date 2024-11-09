@@ -5,7 +5,7 @@ Website based on https://github.com/poole/poole
 ## Deploy
 
 ```bash
-git push master
+git push origin master
 ```
 
 ## Development
